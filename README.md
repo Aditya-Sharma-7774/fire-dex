@@ -38,7 +38,31 @@ Every indicator (RSI, MACD, Bollinger…) is calculated in tested Python. The la
 
 **Prerequisites:** Python 3.11+ · Node.js 20+
 
-### Backend
+### The easy way
+
+Double-click **`START.bat`**.
+
+It checks Python and Node, sets everything up the first time (virtual environment, packages, `.env` files), starts both servers in their own windows, and opens the app in your browser. No commands to type.
+
+To stop everything, double-click **`STOP.bat`**.
+
+While editing backend code, use **`DEV_BACKEND.bat`** instead of the backend window — it enables auto-reload.
+
+### Documentation
+
+| File | What it's for |
+|---|---|
+| [docs/PHASES.md](docs/PHASES.md) | **Start here.** The project explained in plain language, phase by phase, with what to say to professors |
+| [docs/VIVA.md](docs/VIVA.md) | Technical question bank for the viva — Python, agents, blockchain, security |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Why the system is shaped the way it is |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Milestone plan and scope decisions |
+
+### The manual way
+
+<details>
+<summary>If you prefer running the servers yourself</summary>
+
+#### Backend
 
 ```bash
 cd backend
@@ -51,7 +75,7 @@ uvicorn app.main:app --reload
 
 → API on <http://127.0.0.1:8000> · interactive docs on <http://127.0.0.1:8000/docs>
 
-### Frontend
+#### Frontend
 
 ```bash
 cd frontend
@@ -62,11 +86,7 @@ npm run dev
 
 → UI on <http://localhost:5173>
 
-Or from the project root, launch both at once:
-
-```bash
-run.bat
-```
+</details>
 
 ### Tests
 
