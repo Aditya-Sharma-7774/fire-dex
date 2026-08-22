@@ -1,0 +1,86 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-coal-950 text-coal-100 font-sans antialiased;
+    /* Two very soft radial pools of orange behind everything. This is what
+       stops a dark UI from looking like a flat black rectangle. */
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(249, 115, 22, 0.13), transparent),
+      radial-gradient(ellipse 60% 50% at 85% 100%, rgba(234, 88, 12, 0.07), transparent);
+    background-attachment: fixed;
+  }
+
+  ::selection {
+    @apply bg-fire-500/30 text-fire-50;
+  }
+
+  /* A slim, dark scrollbar. The default light one breaks the theme badly. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-coal-950;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-coal-700 rounded-full border-2 border-coal-950;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-coal-600;
+  }
+}
+
+@layer components {
+  /* Glassmorphism, used carefully: a translucent panel only works when
+     something interesting sits behind it, so these go over the radial
+     gradients above, never over flat black. */
+  .glass {
+    @apply rounded-2xl border border-white/[0.07] bg-white/[0.03] backdrop-blur-xl;
+  }
+
+  .glass-hover {
+    @apply transition-all duration-300 hover:border-fire-500/25 hover:bg-white/[0.05];
+  }
+
+  .fire-text {
+    @apply bg-gradient-to-br from-fire-300 via-fire-500 to-fire-700 bg-clip-text text-transparent;
+  }
+
+  .hairline {
+    @apply border-white/[0.07];
+  }
+
+  /* Faint grid, masked so it fades out towards the edges. Adds depth
+     without competing with the content. */
+  .grid-bg {
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+    background-size: 56px 56px;
+    -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 55%, transparent 100%);
+    mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 55%, transparent 100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
