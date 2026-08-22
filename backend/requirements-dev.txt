@@ -1,0 +1,11 @@
+# Fire DEX - development / testing dependencies
+# Install with:  pip install -r requirements.txt -r requirements-dev.txt
+
+-r requirements.txt
+
+pytest>=8.3.0
+pytest-asyncio>=0.24.0
+
+# respx mocks httpx, so provider tests never hit real APIs
+# (added properly in the milestone where providers land)
+respx>=0.21.0

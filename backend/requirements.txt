@@ -1,0 +1,24 @@
+# Fire DEX - backend runtime dependencies
+#
+# Pinned with lower bounds so `pip install -r requirements.txt` stays
+# reproducible enough for a student project without freezing us on old
+# security patches. Run `pip freeze > requirements.lock.txt` before the
+# demo so the exact working versions are recorded.
+
+# --- Web framework -------------------------------------------------
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+
+# --- Configuration & validation -----------------------------------
+# Pydantic v2 is the backbone of the whole project: every agent result,
+# evidence record and API response is a Pydantic model.
+pydantic>=2.9.0
+pydantic-settings>=2.6.0
+
+# --- HTTP client ---------------------------------------------------
+# Async client used by every external data provider (market, chain, LLM).
+httpx>=0.27.0
+
+# --- Structured logging --------------------------------------------
+# Emits JSON logs. Fire Auditor consumes these directly later.
+structlog>=24.4.0
