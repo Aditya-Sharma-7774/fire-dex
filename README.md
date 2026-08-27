@@ -27,8 +27,8 @@ Every indicator (RSI, MACD, Bollinger…) is calculated in tested Python. The la
 
 | | |
 |---|---|
-| **Current milestone** | ✅ M1 — Foundation |
-| **Next milestone** | M2 — MetaMask + Ethereum/Sepolia balances |
+| **Current milestone** | ✅ M2 — MetaMask + live Ethereum/Sepolia balances |
+| **Next milestone** | M3 — Token registry + live prices |
 | **Prototype target** | 10-day vertical slice: Ethereum + Sepolia, 3 agents, full audit spine |
 | **Full project** | November |
 
@@ -95,6 +95,28 @@ cd backend
 .venv\Scripts\python -m pytest
 ```
 
+### Developing without MetaMask
+
+If you do not have MetaMask installed, add `?mockWallet=1` to the URL:
+
+<http://localhost:5173/?mockWallet=1>
+
+This installs a **development-only fake wallet** so wallet UI can be built and tested. It fakes only the *wallet* — addresses, approval, network switching. Balances still come from the real backend reading a real node, so a mocked address shows its genuine on-chain balance. A permanent orange banner appears while it is active, and the whole module is stripped from production builds.
+
+Console helpers while it is active:
+
+```js
+__mockWallet.switchAccount()            // fires accountsChanged
+__mockWallet.switchToUnsupportedChain() // fires chainChanged to Polygon (137)
+__mockWallet.revokeAccess()             // simulates the user disconnecting
+```
+
+Add `&mockReject=1` to test the user-rejection path.
+
+### API keys
+
+**None are required.** RPC access defaults to verified public keyless endpoints. To use your own (recommended for heavier use), set `ETHEREUM_RPC_URL` and `SEPOLIA_RPC_URL` in `backend/.env`.
+
 ---
 
 ## Architecture
@@ -127,8 +149,8 @@ Full detail in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Milestone plan in [
 
 | Network | Family | Chain ID | Wallet | Status |
 |---|---|---|---|---|
-| Ethereum | EVM | 1 | MetaMask | M2 |
-| Sepolia Testnet | EVM | 11155111 | MetaMask | M2 |
+| Ethereum | EVM | 1 | MetaMask | ✅ Live |
+| Sepolia Testnet | EVM | 11155111 | MetaMask | ✅ Live |
 | BNB Smart Chain | EVM | 56 | MetaMask | November |
 | Solana | Solana | — | Phantom | November |
 | Bitcoin | UTXO | — | read-only | November |
