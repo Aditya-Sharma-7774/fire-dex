@@ -66,7 +66,9 @@ export default {
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
         float: 'float 6s ease-in-out infinite',
+        'float-slow': 'float 11s ease-in-out infinite',
         'fade-up': 'fadeUp 0.5s ease-out both',
+        'scale-in': 'scaleIn 0.16s ease-out both',
       },
       keyframes: {
         float: {
@@ -76,6 +78,11 @@ export default {
         fadeUp: {
           '0%': { opacity: '0', transform: 'translateY(12px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        // Dropdowns grow from their corner rather than appearing abruptly.
+        scaleIn: {
+          '0%': { opacity: '0', transform: 'scale(0.96) translateY(-4px)' },
+          '100%': { opacity: '1', transform: 'scale(1) translateY(0)' },
         },
       },
     },

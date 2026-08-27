@@ -8,9 +8,14 @@
  * That is what makes "add BNB Smart Chain" a one-object change instead of a
  * hunt through twenty components.
  *
- * Note that `chainId` is meaningful for EVM chains only. Solana and Bitcoin
- * do not have EIP-155 chain IDs, which is exactly why `family` exists -- the
- * app must never assume every chain behaves like Ethereum.
+ * `chainId` is meaningful for EVM chains only. Solana and Bitcoin have no
+ * EIP-155 chain ID, which is exactly why `family` exists -- the app must
+ * never assume every chain behaves like Ethereum.
+ *
+ * KEPT IN SYNC with the backend registry in
+ * `backend/app/blockchain/registry.py`. A backend test parses this file and
+ * fails if the two disagree, because a mismatched chain ID or decimal count
+ * is a financial safety bug, not a cosmetic one.
  */
 
 export type ChainFamily = 'evm' | 'solana' | 'bitcoin'
@@ -37,7 +42,7 @@ export interface ChainConfig {
   /** Accent colour used in charts, chips and the chain selector. */
   color: string
   /** Whether this chain is wired up yet. Drives "coming soon" states. */
-  status: 'active' | 'planned'
+  isActive: boolean
 }
 
 export const CHAINS: Record<string, ChainConfig> = {
@@ -52,12 +57,12 @@ export const CHAINS: Record<string, ChainConfig> = {
     isTestnet: false,
     explorerUrl: 'https://etherscan.io',
     color: '#627EEA',
-    status: 'planned',
+    isActive: true,
   },
   sepolia: {
     id: 'sepolia',
     name: 'Sepolia Testnet',
-    shortName: 'SEP',
+    shortName: 'Sepolia',
     family: 'evm',
     chainId: 11155111,
     nativeSymbol: 'ETH',
@@ -65,7 +70,7 @@ export const CHAINS: Record<string, ChainConfig> = {
     isTestnet: true,
     explorerUrl: 'https://sepolia.etherscan.io',
     color: '#8B9DC3',
-    status: 'planned',
+    isActive: true,
   },
   bsc: {
     id: 'bsc',
@@ -78,7 +83,7 @@ export const CHAINS: Record<string, ChainConfig> = {
     isTestnet: false,
     explorerUrl: 'https://bscscan.com',
     color: '#F0B90B',
-    status: 'planned',
+    isActive: false,
   },
   solana: {
     id: 'solana',
@@ -91,7 +96,7 @@ export const CHAINS: Record<string, ChainConfig> = {
     isTestnet: false,
     explorerUrl: 'https://solscan.io',
     color: '#14F195',
-    status: 'planned',
+    isActive: false,
   },
   bitcoin: {
     id: 'bitcoin',
@@ -104,11 +109,14 @@ export const CHAINS: Record<string, ChainConfig> = {
     isTestnet: false,
     explorerUrl: 'https://mempool.space',
     color: '#F7931A',
-    status: 'planned',
+    isActive: false,
   },
 }
 
 export const CHAIN_LIST: ChainConfig[] = Object.values(CHAINS)
+
+/** Chains that are implemented and selectable right now. */
+export const ACTIVE_CHAINS: ChainConfig[] = CHAIN_LIST.filter((c) => c.isActive)
 
 export function getChain(id: string): ChainConfig | undefined {
   return CHAINS[id]
@@ -117,4 +125,20 @@ export function getChain(id: string): ChainConfig | undefined {
 /** Find an EVM chain by its EIP-155 ID -- used to detect what MetaMask is on. */
 export function getEvmChainByChainId(chainId: number): ChainConfig | undefined {
   return CHAIN_LIST.find((c) => c.family === 'evm' && c.chainId === chainId)
+}
+
+/**
+ * EIP-155 chain ID as the hex string wallets expect.
+ *
+ * `wallet_switchEthereumChain` takes `{ chainId: '0xaa36a7' }`, not the
+ * decimal 11155111. Getting this wrong is a very common bug, so the
+ * conversion lives here once rather than at every call site.
+ */
+export function toHexChainId(chainId: number): string {
+  return `0x${chainId.toString(16)}`
+}
+
+/** Explorer link for an address on a given chain. */
+export function explorerAddressUrl(chain: ChainConfig, address: string): string {
+  return `${chain.explorerUrl}/address/${address}`
 }

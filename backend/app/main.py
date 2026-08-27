@@ -14,7 +14,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from app.api.v1 import chains as chains_router
 from app.config import AppMode, Settings, get_settings
+from app.core.errors import FireDexError, firedex_error_handler
 from app.core.logging import configure_logging, get_logger
 
 settings: Settings = get_settings()
@@ -99,6 +101,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# One handler turns every deliberate error into a consistent JSON shape,
+# so no route needs its own try/except for expected failures.
+app.add_exception_handler(FireDexError, firedex_error_handler)  # type: ignore[arg-type]
+
+app.include_router(chains_router.router, prefix="/api/v1")
 
 
 # ---------------------------------------------------------------------

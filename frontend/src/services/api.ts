@@ -21,11 +21,46 @@ export interface HealthResponse {
   timestamp: string
 }
 
+export interface ChainStatusResponse {
+  chain: string
+  configured: boolean
+  reachable: boolean
+  chain_id: number | null
+  block_number: number | null
+  error: string | null
+}
+
+export interface NativeBalanceResponse {
+  chain: string
+  address: string
+  symbol: string
+  decimals: number
+  /**
+   * Exact balance in the smallest unit (wei), as a STRING.
+   *
+   * Wei routinely exceeds Number.MAX_SAFE_INTEGER, so parsing this as a
+   * JavaScript number would silently corrupt it. Use BigInt(raw) when you
+   * need to do arithmetic.
+   */
+  raw: string
+  formatted: string
+  fetched_at: string
+}
+
+/** Shape of the backend's error responses. */
+interface ApiErrorBody {
+  error: string
+  message: string
+  detail: string | null
+}
+
 /** Thrown for any non-2xx response, so callers get one error type. */
 export class ApiError extends Error {
   constructor(
     message: string,
     readonly status?: number,
+    readonly code?: string,
+    readonly detail?: string | null,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -48,7 +83,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!response.ok) {
-    throw new ApiError(`Request to ${path} failed`, response.status)
+    // The backend sends structured errors; surface its message rather than
+    // a generic "request failed", so the user learns something useful.
+    let body: Partial<ApiErrorBody> = {}
+    try {
+      body = (await response.json()) as ApiErrorBody
+    } catch {
+      /* non-JSON error body; fall through to the generic message */
+    }
+    throw new ApiError(
+      body.message ?? `Request to ${path} failed`,
+      response.status,
+      body.error,
+      body.detail ?? null,
+    )
   }
 
   return (await response.json()) as T
@@ -56,6 +104,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => request<HealthResponse>('/health'),
+
+  chainStatus: (chain: string) =>
+    request<ChainStatusResponse>(`/api/v1/chains/${chain}/status`),
+
+  nativeBalance: (chain: string, address: string) =>
+    request<NativeBalanceResponse>(
+      `/api/v1/chains/${chain}/balance/${address}`,
+    ),
 }
 
 export { API_BASE_URL }

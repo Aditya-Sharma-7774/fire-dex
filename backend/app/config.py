@@ -70,6 +70,27 @@ class Settings(BaseSettings):
     #   postgresql+psycopg://user:pass@localhost:5432/firedex
     database_url: str = "sqlite+aiosqlite:///./data/firedex.db"
 
+    # --- Blockchain RPC endpoints -----------------------------------
+    # These default to public, keyless endpoints so the project runs with
+    # no signup. They are rate limited and are NOT suitable for heavy use
+    # -- set your own (e.g. Alchemy) in .env when you have a key.
+    ethereum_rpc_url: str = "https://ethereum-rpc.publicnode.com"
+    sepolia_rpc_url: str = "https://ethereum-sepolia-rpc.publicnode.com"
+    bsc_rpc_url: str = ""
+
+    def rpc_url_for(self, chain_id: str) -> str | None:
+        """RPC endpoint for a chain key, or None if not configured.
+
+        Keeps the mapping from chain key to setting in one place, so an
+        adapter never has to know how settings are named.
+        """
+        mapping = {
+            "ethereum": self.ethereum_rpc_url,
+            "sepolia": self.sepolia_rpc_url,
+            "bsc": self.bsc_rpc_url,
+        }
+        return mapping.get(chain_id) or None
+
     @property
     def cors_origin_list(self) -> list[str]:
         """CORS origins as a list, trimmed of whitespace and blanks."""
