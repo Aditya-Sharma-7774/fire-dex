@@ -12,15 +12,15 @@ This proves the actual thesis — auditable multi-agent intelligence — rather 
 
 | Day | Milestone | Deliverable |
 |---|---|---|
-| 1 | **M1 Foundation** ✅ | Repo, FastAPI `/health`, React fire-theme shell, live backend status |
-| 2 | M2 Wallet | MetaMask connect, account/chain detection, ETH + Sepolia native balances |
-| 3 | M3 Tokens & prices | Token registry (~10 ETH assets), market data provider, live prices |
-| 4 | M4 Charts & indicators | Candlestick chart, timeframes, **tested indicator engine** |
-| 5 | M5 Audit spine | Evidence bundle, validator, canonicaliser, SHA-256, hash chain |
-| 6 | M6 First agent | LLM provider abstraction, Market Agent, end-to-end through audit |
-| 7 | M7 More agents | Technical Agent, Risk Agent, Orchestrator |
-| 8 | M8 Review & history | Reviewer Agent, Fire Auditor metrics, history + drill-down |
-| 9 | M9 Fire AI page | Live agent visualisation over SSE, verification UI |
+| 1 | **M1 Foundation** ✅ DONE | Repo, FastAPI `/health`, React fire-theme shell, live backend status |
+| 2 | M2 Wallet ✅ DONE | MetaMask connect, account/chain detection, ETH + Sepolia native balances |
+| 3 | M3 Tokens & prices ✅ DONE | Token registry (~10 ETH assets), market data provider, live prices |
+| 4 | M4 Charts & indicators ✅ DONE | Candlestick chart, timeframes, **tested indicator engine** |
+| 5 | M5 Audit spine ✅ DONE | Evidence bundle, validator, canonicaliser, SHA-256, hash chain |
+| 6 | M6 First agent ✅ DONE | LLM provider abstraction, Market Agent, end-to-end through audit |
+| 7 | M7 More agents ✅ DONE | Technical Agent, Risk Agent, Orchestrator |
+| 8 | M8 Review & history ✅ DONE | Reviewer Agent, Fire Auditor metrics, history + drill-down |
+| 9 | M9 Fire AI page ✅ DONE | Live agent visualisation over SSE, verification UI |
 | 10 | M10 Demo | Buffer, demo script, README screenshots |
 
 ### Why the audit spine lands on day 5, not at the end

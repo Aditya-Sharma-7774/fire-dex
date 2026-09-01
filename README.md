@@ -27,8 +27,8 @@ Every indicator (RSI, MACD, Bollinger…) is calculated in tested Python. The la
 
 | | |
 |---|---|
-| **Current milestone** | ✅ M2 — MetaMask + live Ethereum/Sepolia balances |
-| **Next milestone** | M3 — Token registry + live prices |
+| **Current state** | ✅ Prototype complete — full pipeline running end to end |
+| **Next** | Solana, Bitcoin, BNB, swap quotes, Whale/On-chain agents |
 | **Prototype target** | 10-day vertical slice: Ethereum + Sepolia, 3 agents, full audit spine |
 | **Full project** | November |
 
@@ -115,7 +115,27 @@ Add `&mockReject=1` to test the user-rejection path.
 
 ### API keys
 
-**None are required.** RPC access defaults to verified public keyless endpoints. To use your own (recommended for heavier use), set `ETHEREUM_RPC_URL` and `SEPOLIA_RPC_URL` in `backend/.env`.
+**No key is required to run the wallet, prices, charts or indicators.** RPC and market data default to verified public keyless endpoints.
+
+**An AI provider is needed for analyses.** Either:
+
+- **Online (recommended):** set `GROQ_API_KEY` in `backend/.env`. Free tier. An analysis takes about **8 seconds**.
+- **Local:** run [Ollama](https://ollama.com) with `ollama pull llama3.1:8b`. No key, fully private, but the same analysis takes about **460 seconds** on a typical laptop — see the measured comparison below.
+
+Check what is available at any time: <http://127.0.0.1:8000/api/v1/ai/status>
+
+> ⚠️ Provider model names change. Groq withdrew the Llama models during development and our default started returning HTTP 404. If analyses fail with 404, check `/api/v1/ai/status` and update `GROQ_MODEL`.
+
+### Measured: local vs online
+
+Identical analysis of ETH, same evidence, same prompts:
+
+| | Model | Duration | Agents | Evidence coverage | Reviewer score |
+|---|---|---|---|---|---|
+| **Online** | `openai/gpt-oss-120b` | **8s** | 4/4 | 59% | 78.5 |
+| **Local** | `llama3.1:8b` | 462s | 4/4 | 44% | 59.9 |
+
+The local path is kept as the privacy option and as a genuine finding for the evaluation section, not hidden. Ollama serves requests largely serially, so the orchestrator limits local concurrency to 1 — running four agents at it simultaneously made all four time out.
 
 ---
 
