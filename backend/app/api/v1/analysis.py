@@ -18,7 +18,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Path, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.orchestrator import detect_conflicts, run_analysis
@@ -391,13 +391,17 @@ async def audit_stats(db: DbDep) -> dict[str, Any]:
         )
     ).one()
 
+    # Count validation passes with a CASE rather than casting a boolean.
+    # `func.cast(col, type_=None)` produced NullType and a CompileError --
+    # SQLAlchemy cannot generate DDL without an explicit type.
     by_agent = (
         await db.execute(
             select(
                 AgentExecution.agent,
                 func.count(),
                 func.avg(AgentExecution.duration_ms),
-                func.sum(func.cast(AgentExecution.validation_passed, type_=None)),
+                func.sum(case((AgentExecution.validation_passed.is_(True), 1), else_=0)),
+                func.sum(case((AgentExecution.status == "completed", 1), else_=0)),
             ).group_by(AgentExecution.agent)
         )
     ).all()
@@ -412,7 +416,13 @@ async def audit_stats(db: DbDep) -> dict[str, Any]:
         "total_output_tokens": averages[5],
         "total_agent_failures": averages[6],
         "per_agent": [
-            {"agent": row[0], "runs": row[1], "avg_duration_ms": int(row[2] or 0)}
+            {
+                "agent": row[0],
+                "runs": row[1],
+                "avg_duration_ms": int(row[2] or 0),
+                "validation_passed": row[3] or 0,
+                "completed": row[4] or 0,
+            }
             for row in by_agent
         ],
         "accuracy_note": (
