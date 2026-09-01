@@ -147,6 +147,79 @@ Check 4 is what actually catches hallucinated figures. The tolerance allows legi
 
 ---
 
+## 4b. Directional signal (computed, not model-chosen)
+
+**Implemented in:** `backend/app/signals/engine.py`
+
+A vote across up to 8 indicators using published thresholds — the same
+approach as a conventional technical rating.
+
+| Group | Indicator | Buy when | Sell when |
+|---|---|---|---|
+| Oscillator | RSI (14) | < 30 | > 70 |
+| Oscillator | MACD histogram | > 0 | < 0 |
+| Oscillator | Bollinger position | < 0.20 | > 0.80 |
+| Moving average | Price vs SMA 20 / 50 / 200 | above | below |
+| Moving average | EMA(12) vs EMA(26) | fast above slow | fast below slow |
+
+```
+score = (buy_votes − sell_votes) / total_votes        →  −1 … +1
+
+score ≥  0.50  STRONG_BUY        score ≤ −0.50  STRONG_SELL
+score ≥  0.15  BUY               score ≤ −0.15  SELL
+otherwise      NEUTRAL
+```
+
+**Neutral votes stay in the denominator.** Two buys out of six indicators is
+a weaker signal than two out of two, and the score must reflect that.
+
+**No indicators at all returns no signal, not NEUTRAL.** "We could not tell"
+and "the indicators disagree evenly" are different statements.
+
+Every vote records the rule that produced it, so *"why does it say Buy?"*
+has a listable answer rather than "the model decided".
+
+---
+
+## 4c. Groundedness
+
+**Implemented in:** `backend/app/agents/groundedness.py`
+
+Standard idea from retrieval-augmented generation evaluation: what fraction
+of a model's claims are actually entailed by the context it was given.
+Computed, not judged — asking a model to grade its own grounding is circular.
+
+| Dimension | Weight | Definition |
+|---|---|---|
+| Claim support | 0.50 | Claims where every citation resolves AND every number matches |
+| Evidence use | 0.25 | Of the evidence gathered, how much was cited |
+| Anchoring | 0.25 | Distinct evidence per claim, ÷ 3 target, capped at 1 |
+
+Stale evidence caps the score at 0.75.
+
+| Score | Band |
+|---|---|
+| ≥ 0.85 | strong |
+| ≥ 0.65 | adequate |
+| ≥ 0.40 | weak |
+| < 0.40 | poor |
+
+**Zero claims scores 0.0, not 1.0.** Nothing to ground is not perfect
+grounding, and reporting 1.0 would make a failed analysis look immaculate.
+
+### Why this is separate from the reviewer score
+
+The reviewer measures overall **quality** — coverage, completion, agreement,
+plus a bounded model critique. Groundedness asks a narrower, harder
+question: **is what was said supported by what was known?**
+
+An analysis can be well-reviewed and thinly grounded (thorough, but leaning
+on one fact), or poorly reviewed and airtight (two agents failed, but the
+third's every word is traceable). Keeping them separate is what makes each
+one mean something.
+
+---
+
 ## 5. Indicator correctness
 
 **Implemented in:** `backend/app/indicators/engine.py` · **Tested in:** `tests/test_indicators.py`
