@@ -56,6 +56,7 @@ While editing backend code, use **`DEV_BACKEND.bat`** instead of the backend win
 | [docs/VIVA.md](docs/VIVA.md) | Technical question bank for the viva — Python, agents, blockchain, security |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Why the system is shaped the way it is |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Milestone plan and scope decisions |
+| [docs/EVALUATION.md](docs/EVALUATION.md) | Every metric's formula — risk score, reviewer score, coverage, integrity |
 
 ### The manual way
 
@@ -148,7 +149,7 @@ FRONTEND  React + TypeScript + Vite + Tailwind
 BACKEND   FastAPI
    api/         routers and schemas
    agents/      market · technical · whale · onchain · portfolio · risk
-                orchestrator (LangGraph) · reviewer
+                orchestrator (plain async Python) · reviewer
    evidence/    bundle builder · evidence types · output validator
    audit/       Fire Auditor · canonicaliser · SHA-256 · verifier
    services/    indicators · portfolio · tokens

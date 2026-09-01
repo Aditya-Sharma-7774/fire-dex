@@ -183,7 +183,7 @@ Frontend mirror of this rule lives in `frontend/src/config/chains.ts`.
 |---|---|
 | **FastAPI** | Async, typed, generates the OpenAPI schema we turn into frontend types |
 | **Pydantic v2** | The evidence and agent contracts *are* Pydantic models; validation is the feature |
-| **LangGraph** | Specifically for the reviewer's `REANALYZE` loop — a conditional cycle. Plain function calls cannot express that cleanly |
+| **No LangGraph** | Proposed for the reviewer's `REANALYZE` cycle. Once built, that cycle turned out to be a single bounded retry — one conditional edge — which plain async Python expresses more clearly than a graph framework and its state model. The seam is kept: the orchestrator is one async function over typed state, so adopting LangGraph when the graph genuinely branches is contained. Adding it now would be complexity we cannot justify |
 | **structlog** | Fire Auditor consumes structured log records directly, no parsing |
 | **Own indicator module** | No C toolchain on Windows, fully testable against known values, defensible in a viva — and the ideal first task for a beginner |
 | **SQLite → PostgreSQL** | SQLite for the 10-day prototype (zero setup). SQLAlchemy makes the swap a one-line config change |
