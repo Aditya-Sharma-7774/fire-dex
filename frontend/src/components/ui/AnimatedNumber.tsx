@@ -7,6 +7,15 @@ interface AnimatedNumberProps {
   decimals?: number
   durationMs?: number
   className?: string
+  /**
+   * How to render the number once it settles.
+   *
+   * Without this the component printed a bare `toFixed(2)` string, so a
+   * portfolio total read "$16668.82" while the rows beneath it read
+   * "$16,335.57". Two formats for the same kind of figure on one screen
+   * looks like a bug to the reader, because it is one.
+   */
+  format?: (value: number) => string
 }
 
 /**
@@ -25,6 +34,7 @@ export function AnimatedNumber({
   decimals = 4,
   durationMs = 700,
   className,
+  format,
 }: AnimatedNumberProps) {
   const target = Number.parseFloat(value)
   const [display, setDisplay] = useState(target)
@@ -64,10 +74,15 @@ export function AnimatedNumber({
 
   if (!Number.isFinite(target)) return <span className={className}>—</span>
 
+  const settled = Math.abs(display - target) < 1e-9
+
   // Trim trailing zeros so a whole balance reads as "2" and not "2.0000",
   // but only once the animation has settled.
-  const settled = Math.abs(display - target) < 1e-9
-  const text = settled ? value : display.toFixed(decimals)
+  const text = format
+    ? format(settled ? target : display)
+    : settled
+      ? value
+      : display.toFixed(decimals)
 
   return (
     <span className={className} style={{ fontVariantNumeric: 'tabular-nums' }}>

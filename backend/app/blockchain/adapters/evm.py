@@ -11,6 +11,7 @@ than going through a library, so the request/response cycle is visible
 and easy to reason about.
 """
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -25,12 +26,49 @@ from app.core.errors import (
     RpcError,
 )
 from app.core.logging import get_logger
+from app.market.cache import TtlCache
+from app.tokens.types import TokenConfig
 
 log = get_logger(__name__)
 
 # A balance query should be fast. If a node takes longer than this it is
 # effectively down, and waiting only makes the user interface feel broken.
 RPC_TIMEOUT_SECONDS = 12.0
+
+# Chain reads are cached briefly.
+#
+# WHY: the dashboard polls balances, the block height and the portfolio on
+# separate timers. Without this, every poll from every open tab becomes a
+# request to a shared public node, which then rate limits us -- we measured
+# a portfolio request degrading from 8 seconds to 48 seconds and failing.
+#
+# A block is produced roughly every 12 seconds on Ethereum, so a balance
+# cannot meaningfully change faster than that. An 8-second TTL is therefore
+# invisible to the user while collapsing repeated polls into one call.
+RPC_CACHE_TTL_SECONDS = 8.0
+
+_rpc_cache: TtlCache[str] = TtlCache(default_ttl_seconds=RPC_CACHE_TTL_SECONDS)
+
+
+def clear_rpc_cache() -> None:
+    """Empty the RPC cache. Used by tests to keep them independent."""
+    _rpc_cache.clear()
+
+# First 4 bytes of keccak256("balanceOf(address)"). Part of the ERC-20
+# standard, so it is the same for every compliant token.
+ERC20_BALANCE_OF_SELECTOR = "0x70a08231"
+
+
+@dataclass
+class RawTokenBalance:
+    """A token balance straight from the chain, before pricing.
+
+    `raw` is None when the read failed. That is deliberately distinct from
+    zero: "we could not find out" is not the same as "they hold none".
+    """
+
+    token: TokenConfig
+    raw: int | None
 
 
 class EvmAdapter:
@@ -99,12 +137,21 @@ class EvmAdapter:
             )
         return self._rpc_url
 
-    async def _rpc_call(self, method: str, params: list) -> str:
+    def _cache_key(self, method: str, params: list) -> str:
+        return f"{self._config.id}:{method}:{params}"
+
+    async def _rpc_call(self, method: str, params: list, *, use_cache: bool = True) -> str:
         """Make one JSON-RPC 2.0 call and return the raw `result` field.
 
-        Every EVM read in this project goes through here, so retry policy,
-        error mapping and logging live in exactly one place.
+        Every EVM read in this project goes through here, so caching, retry
+        policy, error mapping and logging live in exactly one place.
         """
+        key = self._cache_key(method, params)
+        if use_cache:
+            cached = _rpc_cache.get_fresh(key)
+            if cached is not None:
+                return cached
+
         url = self._require_rpc_url()
         payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
 
@@ -157,7 +204,97 @@ class EvmAdapter:
                 detail=str(body)[:200],
             )
 
-        return body["result"]
+        result = body["result"]
+        if use_cache:
+            _rpc_cache.set(key, result)
+        return result
+
+    async def _rpc_batch(self, calls: list[tuple[str, list]]) -> list[str | None]:
+        """Make several JSON-RPC calls in ONE HTTP request.
+
+        Reading ten token balances as ten separate requests is ten times the
+        latency and ten times the rate-limit consumption. JSON-RPC 2.0 allows
+        an array of requests in a single POST, which public nodes support.
+
+        Results come back in the same order as `calls`. An entry is None if
+        that individual call failed -- one bad token must not discard the
+        other nine.
+        """
+        if not calls:
+            return []
+
+        # The whole batch is cached as one unit, keyed by its contents. A
+        # portfolio refresh repeats the identical batch, so this collapses
+        # repeated polls into a single request to the node.
+        batch_key = self._cache_key("batch", calls)
+        cached_batch = _rpc_cache.get_fresh(batch_key)
+        if cached_batch is not None:
+            import json as _json
+
+            return _json.loads(cached_batch)
+
+        url = self._require_rpc_url()
+        payload = [
+            {"jsonrpc": "2.0", "id": index, "method": method, "params": params}
+            for index, (method, params) in enumerate(calls)
+        ]
+
+        try:
+            async with httpx.AsyncClient(timeout=RPC_TIMEOUT_SECONDS) as client:
+                response = await client.post(url, json=payload)
+        except httpx.TimeoutException as exc:
+            raise RpcError(
+                f"{self._config.name} node did not respond in time.",
+                detail=f"batch of {len(calls)} calls timed out",
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise RpcError(
+                f"Could not reach the {self._config.name} node.", detail=str(exc)
+            ) from exc
+
+        if response.status_code == 429:
+            raise RateLimitError(f"The {self._config.name} RPC provider is rate limiting us.")
+        if response.status_code >= 400:
+            raise RpcError(
+                f"{self._config.name} node returned HTTP {response.status_code}.",
+                detail=response.text[:200],
+            )
+
+        try:
+            body = response.json()
+        except ValueError as exc:
+            raise RpcError(f"{self._config.name} node returned non-JSON.") from exc
+
+        # Some nodes answer a batch with a single error object.
+        if isinstance(body, dict):
+            raise RpcError(
+                f"{self._config.name} node rejected the batch.",
+                detail=str(body.get("error", body))[:200],
+            )
+
+        # A batch response may arrive out of order, so map by id.
+        by_id: dict[int, str | None] = {}
+        for item in body:
+            if not isinstance(item, dict):
+                continue
+            item_id = item.get("id")
+            if "error" in item:
+                log.warning(
+                    "batch_call_failed",
+                    chain=self._config.id,
+                    call_id=item_id,
+                    error=str(item["error"])[:120],
+                )
+                by_id[item_id] = None
+            else:
+                by_id[item_id] = item.get("result")
+
+        results = [by_id.get(index) for index in range(len(calls))]
+
+        import json as _json
+
+        _rpc_cache.set(batch_key, _json.dumps(results))
+        return results
 
     # -----------------------------------------------------------------
     # Reads
@@ -191,6 +328,58 @@ class EvmAdapter:
             formatted=format_units(wei, self._config.native_decimals),
             fetched_at=datetime.now(timezone.utc),
         )
+
+    async def get_token_balances(
+        self, address: str, tokens: list[TokenConfig]
+    ) -> list[RawTokenBalance]:
+        """Read ERC-20 balances for several tokens in one request.
+
+        HOW AN ERC-20 BALANCE IS READ
+        -----------------------------
+        There is no RPC method for "token balance". A token is a smart
+        contract, so we call its `balanceOf(address)` function using
+        `eth_call`, which executes contract code without sending a
+        transaction (no gas, no signature, read-only).
+
+        The call data is the ABI encoding of that function:
+
+            0x70a08231                                   4-byte selector,
+                                                         first 4 bytes of
+                                                         keccak256("balanceOf(address)")
+            000...000d8dA6BF2...96045                    the address, left-padded
+                                                         to 32 bytes
+
+        The result is a 32-byte integer: the balance in the token's smallest
+        unit, which is why `decimals` from the registry matters.
+        """
+        checksummed = self.validate_address(address)
+        erc20 = [t for t in tokens if not t.is_native and t.address]
+        if not erc20:
+            return []
+
+        # 12 zero bytes then the 20-byte address, per the ABI encoding rules.
+        padded_address = checksummed[2:].lower().rjust(64, "0")
+        calldata = f"{ERC20_BALANCE_OF_SELECTOR}{padded_address}"
+
+        calls = [
+            ("eth_call", [{"to": token.address, "data": calldata}, "latest"])
+            for token in erc20
+        ]
+        results = await self._rpc_batch(calls)
+
+        balances: list[RawTokenBalance] = []
+        for token, result in zip(erc20, results, strict=True):
+            if result is None or result == "0x":
+                # The call failed, or the contract returned nothing. We record
+                # the failure rather than treating it as a zero balance --
+                # "unknown" and "none" are different facts.
+                log.warning("token_balance_unavailable", chain=self._config.id, token=token.symbol)
+                balances.append(RawTokenBalance(token=token, raw=None))
+                continue
+
+            balances.append(RawTokenBalance(token=token, raw=int(result, 16)))
+
+        return balances
 
     async def get_status(self) -> ChainStatus:
         """Check the node is configured, reachable, and on the right chain."""

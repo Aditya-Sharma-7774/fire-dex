@@ -47,6 +47,60 @@ export interface NativeBalanceResponse {
   fetched_at: string
 }
 
+export interface PriceResponse {
+  coingecko_id: string
+  symbol: string
+  usd: number
+  change_24h: number | null
+  market_cap: number | null
+  volume_24h: number | null
+  data_timestamp: string | null
+  fetched_at: string
+  source: string
+  /** True when this price came from cache past its TTL. The UI must say so. */
+  is_stale: boolean
+}
+
+export interface TokenBalanceResponse {
+  symbol: string
+  name: string
+  chain: string
+  address: string | null
+  decimals: number
+  is_native: boolean
+  /** Exact amount in the smallest unit, as a string. "unknown" if unreadable. */
+  raw: string
+  formatted: string
+  /** null means "we could not price this", never "it is worthless". */
+  price_usd: number | null
+  value_usd: number | null
+  change_24h: number | null
+  price_is_stale: boolean
+}
+
+export interface PortfolioResponse {
+  chain: string
+  address: string
+  balances: TokenBalanceResponse[]
+  /** null when nothing could be priced -- distinct from a genuine zero. */
+  total_value_usd: number | null
+  priced_count: number
+  unpriced_count: number
+  fetched_at: string
+  contains_stale_prices: boolean
+}
+
+export interface TokenConfigResponse {
+  symbol: string
+  name: string
+  chain: string
+  address: string | null
+  decimals: number
+  coingecko_id: string | null
+  is_native: boolean
+  is_stablecoin: boolean
+}
+
 /** Shape of the backend's error responses. */
 interface ApiErrorBody {
   error: string
@@ -67,7 +121,39 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * In-flight request deduplication.
+ *
+ * Several components legitimately want the same data -- the balance card and
+ * the holdings panel both need the portfolio, and their poll timers drift
+ * into alignment. Without this, each component issues its own identical
+ * request, doubling load on our backend and on the public node behind it.
+ *
+ * When a GET for a path is already in flight, later callers receive the same
+ * promise instead of starting a second request. Entries are removed as soon
+ * as the request settles, so this is deduplication, not caching -- no
+ * response is ever served from here after the fact.
+ */
+const inFlight = new Map<string, Promise<unknown>>()
+
+function dedupe<T>(key: string, run: () => Promise<T>): Promise<T> {
+  const existing = inFlight.get(key)
+  if (existing) return existing as Promise<T>
+
+  const promise = run().finally(() => inFlight.delete(key))
+  inFlight.set(key, promise)
+  return promise
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // Only GETs are safe to deduplicate; a repeated write must actually repeat.
+  if (!init?.method || init.method === 'GET') {
+    return dedupe(path, () => performRequest<T>(path, init))
+  }
+  return performRequest<T>(path, init)
+}
+
+async function performRequest<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response
 
   try {
@@ -112,6 +198,16 @@ export const api = {
     request<NativeBalanceResponse>(
       `/api/v1/chains/${chain}/balance/${address}`,
     ),
+
+  tokens: (chain: string) => request<TokenConfigResponse[]>(`/api/v1/tokens/${chain}`),
+
+  prices: (ids?: string[]) =>
+    request<Record<string, PriceResponse>>(
+      `/api/v1/market/prices${ids?.length ? `?ids=${ids.join(',')}` : ''}`,
+    ),
+
+  portfolio: (chain: string, address: string) =>
+    request<PortfolioResponse>(`/api/v1/portfolio/${chain}/${address}`),
 }
 
 export { API_BASE_URL }

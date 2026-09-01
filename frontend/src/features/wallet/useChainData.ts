@@ -87,7 +87,7 @@ export function useNativeBalance(chain: string | null, address: string | null, i
  * evidence to anyone watching a demo that this is a real network
  * connection and not a mock.
  */
-export function useChainStatus(chain: string | null, intervalMs = 12_000) {
+export function useChainStatus(chain: string | null, intervalMs = 15_000) {
   const [state, setState] = useState<AsyncState<ChainStatusResponse>>(IDLE)
 
   const refresh = useCallback(async () => {

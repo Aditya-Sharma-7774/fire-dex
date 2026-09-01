@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 
 import { Header } from './components/Header'
 import { CHAIN_LIST } from './config/chains'
+import { MarketTable } from './features/market/MarketTable'
 import { BalanceCard } from './features/portfolio/BalanceCard'
+import { HoldingsPanel } from './features/portfolio/HoldingsPanel'
 import { isMockWalletRequested } from './features/wallet/devMockWallet'
 import { WalletAlerts } from './features/wallet/WalletAlerts'
 import { useWallet } from './features/wallet/WalletContext'
@@ -63,6 +65,8 @@ export default function App() {
           <BalanceCard />
         </div>
 
+        <HoldingsPanel />
+        <MarketTable />
         <StatusGrid health={health} healthError={healthError} loading={loading} />
         <ChainGrid />
         <PipelinePreview />

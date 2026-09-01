@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 
 import { AnimatedNumber, TickingNumber } from '../../components/ui/AnimatedNumber'
 import { explorerAddressUrl } from '../../config/chains'
+import { usePortfolio } from '../market/useMarket'
 import { shortenAddress } from '../wallet/provider'
-import { useChainStatus, useNativeBalance } from '../wallet/useChainData'
+import { useChainStatus } from '../wallet/useChainData'
 import { useWallet } from '../wallet/WalletContext'
 
 /**
@@ -19,8 +20,21 @@ export function BalanceCard() {
   const connected = status === 'connected' && address !== null
   const readable = connected && chain !== null && !isUnsupportedNetwork
 
-  const balance = useNativeBalance(readable ? chain.id : null, readable ? address : null)
+  // Reads the native balance out of the portfolio rather than fetching it
+  // separately. HoldingsPanel already loads the portfolio, and the API
+  // client deduplicates identical in-flight GETs, so both components share
+  // a single request instead of each issuing their own.
+  const portfolio = usePortfolio(readable ? chain.id : null, readable ? address : null)
   const chainStatus = useChainStatus(readable ? chain.id : null)
+
+  const native = portfolio.data?.balances.find((b) => b.is_native) ?? null
+  const balance = {
+    loading: portfolio.loading,
+    error: portfolio.error,
+    updatedAt: portfolio.updatedAt,
+    refresh: portfolio.refresh,
+    data: native,
+  }
 
   if (!connected) return <DisconnectedCard />
 
