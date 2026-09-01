@@ -26,6 +26,8 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 
 from app.agents.contract import AgentResult, AgentStatus, ValidationReport
+from app.agents.groundedness import GroundednessReport, assess_groundedness
+from app.agents.suggestion import SuggestionResult, suggest
 from app.agents.reviewer import ReviewerResult, Verdict, build_summary, review
 from app.agents.specialists import (
     MarketIntelligenceAgent,
@@ -37,6 +39,7 @@ from app.agents.specialists import (
 from app.core.logging import get_logger
 from app.evidence.types import EvidenceBundle
 from app.llm.provider import LlmProvider
+from app.signals.engine import SignalResult, compute_signal
 
 log = get_logger(__name__)
 
@@ -64,6 +67,9 @@ class AnalysisOutcome:
         summary: str,
         duration_ms: int,
         attempts: int,
+        grounded: GroundednessReport | None = None,
+        suggestion: SuggestionResult | None = None,
+        signal: SignalResult | None = None,
     ) -> None:
         self.bundle = bundle
         self.results = results
@@ -72,6 +78,9 @@ class AnalysisOutcome:
         self.summary = summary
         self.duration_ms = duration_ms
         self.attempts = attempts
+        self.grounded = grounded
+        self.suggestion = suggestion
+        self.signal = signal
 
 
 def plan_agents(bundle: EvidenceBundle) -> list[type]:
@@ -95,6 +104,7 @@ async def run_analysis(
     *,
     on_progress: ProgressCallback | None = None,
     max_reanalysis: int = 1,
+    snapshot=None,
 ) -> AnalysisOutcome:
     """Run the full pipeline."""
     started = datetime.now(timezone.utc)
@@ -159,6 +169,35 @@ async def run_analysis(
 
         break
 
+    # --- groundedness and signal: both computed, no model involved ---
+    grounded = assess_groundedness(bundle, results, validations)
+    signal = compute_signal(snapshot)
+
+    await emit(
+        {
+            "type": "signal",
+            "signal": signal.signal.value if signal else None,
+            "score": signal.score if signal else None,
+            "buy_votes": signal.buy_votes if signal else 0,
+            "sell_votes": signal.sell_votes if signal else 0,
+            "neutral_votes": signal.neutral_votes if signal else 0,
+            "groundedness": grounded.score,
+            "groundedness_band": grounded.band,
+        }
+    )
+
+    # --- suggestion agent: explains all of the above ---
+    await emit({"type": "agent_status", "agent": "suggestion", "status": "running"})
+    suggestion = await suggest(llm, bundle, results, reviewer, grounded, signal)
+    await emit(
+        {
+            "type": "agent_status",
+            "agent": "suggestion",
+            "status": "completed",
+            "duration_ms": suggestion.duration_ms,
+        }
+    )
+
     ended = datetime.now(timezone.utc)
     duration_ms = int((ended - started).total_seconds() * 1000)
     summary = build_summary(results, reviewer)
@@ -173,6 +212,9 @@ async def run_analysis(
         summary=summary,
         duration_ms=duration_ms,
         attempts=attempts,
+        grounded=grounded,
+        suggestion=suggestion,
+        signal=signal,
     )
 
 

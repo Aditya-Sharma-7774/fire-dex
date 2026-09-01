@@ -122,6 +122,7 @@ async def record_analysis(
     results: list[AgentResult],
     validations: dict[str, ValidationReport],
     reviewer: dict | None,
+    suggestion: dict | None,
     summary: str | None,
     metrics: AuditMetrics,
     model: str | None,
@@ -152,6 +153,7 @@ async def record_analysis(
         "evidence": evidence_payload,
         "agent_results": agent_payload,
         "reviewer": reviewer,
+        "suggestion": suggestion,
         "summary": summary,
     }
 
@@ -170,6 +172,10 @@ async def record_analysis(
         evidence=evidence_payload,
         agent_results=agent_payload,
         reviewer_result=reviewer,
+        suggestion_result=suggestion,
+        signal=(suggestion or {}).get("signal"),
+        signal_score=(suggestion or {}).get("signal_score"),
+        groundedness=(suggestion or {}).get("groundedness"),
         agent_count=metrics.agent_count,
         agents_completed=metrics.agents_completed,
         agents_failed=metrics.agents_failed,

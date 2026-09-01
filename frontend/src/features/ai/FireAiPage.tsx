@@ -5,6 +5,7 @@ import { useWallet } from '../wallet/WalletContext'
 import { BarRows, Gauge } from '../../components/charts/Charts'
 import { AgentGrid } from './AgentGrid'
 import { LiveAgentBars } from './LiveAgentBars'
+import { SuggestionPanel } from './SuggestionPanel'
 import { useAnalysis } from './useAnalysis'
 
 const SUGGESTIONS = [
@@ -165,6 +166,8 @@ export function FireAiPage() {
           <LiveAgentBars agents={analysis.agents} running={analysis.running} />
         </div>
       )}
+
+      {analysis.suggestion && <SuggestionPanel suggestion={analysis.suggestion} />}
 
       {analysis.summary && <ResultPanel analysis={analysis} />}
 

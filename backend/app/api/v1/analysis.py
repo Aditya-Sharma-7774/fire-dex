@@ -37,6 +37,7 @@ from app.evidence.collectors import (
     merge_bundles,
 )
 from app.llm.service import LlmService, get_llm_service
+from app.indicators.service import build_snapshot
 from app.market.candles import get_candle_provider
 from app.market.service import MarketDataService, get_market_service
 from app.tokens.registry import get_token
@@ -75,6 +76,9 @@ class AnalysisSummary(BaseModel):
     reviewer_score: float | None
     reviewer_verdict: str | None
     confidence: float | None
+    signal: str | None = None
+    signal_score: float | None = None
+    groundedness: float | None = None
     evidence_count: int
     evidence_coverage: float | None
     agents_completed: int
@@ -95,6 +99,7 @@ class AnalysisDetail(AnalysisSummary):
     evidence: list[dict]
     agent_results: list[dict]
     reviewer_result: dict | None
+    suggestion_result: dict | None
     executions: list[dict]
     prev_hash: str
     canonical_json: str
@@ -112,6 +117,9 @@ def _to_summary(row: Analysis) -> AnalysisSummary:
         reviewer_score=row.reviewer_score,
         reviewer_verdict=row.reviewer_verdict,
         confidence=row.confidence,
+        signal=row.signal,
+        signal_score=row.signal_score,
+        groundedness=row.groundedness,
         evidence_count=row.evidence_count,
         evidence_coverage=row.evidence_coverage,
         agents_completed=row.agents_completed,
@@ -131,6 +139,7 @@ async def _build_bundle(
     """Collect all evidence for a request. Deterministic; no model involved."""
     bundles = []
     subject_parts = []
+    snapshot = None
 
     if request.symbol:
         symbol = request.symbol.upper()
@@ -140,6 +149,15 @@ async def _build_bundle(
                 symbol, market=market, candles=get_candle_provider(), interval=request.interval
             )
         )
+        # The signal engine votes over indicator values, so it needs the
+        # snapshot rather than the evidence bundle. Fetched here because the
+        # candle provider caches, so this costs nothing extra.
+        try:
+            candles = await get_candle_provider().get_candles(symbol, request.interval, 300)
+            if candles:
+                snapshot = build_snapshot(symbol, request.interval, candles)
+        except Exception:  # noqa: BLE001 - no candles simply means no signal
+            snapshot = None
 
     if request.chain and request.address:
         adapter = get_adapter(request.chain, settings)
@@ -164,7 +182,7 @@ async def _build_bundle(
     merged = merge_bundles(" + ".join(subject_parts), *bundles)
     merged.chain = request.chain
     merged.address = request.address
-    return merged
+    return merged, snapshot
 
 
 @router.post("/analysis/stream")
@@ -189,7 +207,7 @@ async def stream_analysis(
         try:
             query = request.query or f"Analyse {request.symbol or request.address}"
 
-            bundle = await _build_bundle(request, settings, market)
+            bundle, snapshot = await _build_bundle(request, settings, market)
             await queue.put(
                 {
                     "type": "evidence",
@@ -211,6 +229,7 @@ async def stream_analysis(
                 llm,
                 on_progress=on_progress,
                 max_reanalysis=settings.max_reanalysis_attempts,
+                snapshot=snapshot,
             )
 
             metrics = measure(
@@ -225,6 +244,9 @@ async def stream_analysis(
                 results=outcome.results,
                 validations=outcome.validations,
                 reviewer=outcome.reviewer.model_dump(mode="json"),
+                suggestion=(
+                    outcome.suggestion.model_dump(mode="json") if outcome.suggestion else None
+                ),
                 summary=outcome.summary,
                 metrics=metrics,
                 model=llm.model,
@@ -247,6 +269,9 @@ async def stream_analysis(
                     "result_id": analysis.result_id,
                     "summary": outcome.summary,
                     "reviewer": outcome.reviewer.model_dump(mode="json"),
+                    "suggestion": (
+                        outcome.suggestion.model_dump(mode="json") if outcome.suggestion else None
+                    ),
                     "conflicts": conflicts,
                     "attempts": outcome.attempts,
                     "duration_ms": outcome.duration_ms,
@@ -327,6 +352,7 @@ async def get_analysis(
         evidence=row.evidence,
         agent_results=row.agent_results,
         reviewer_result=row.reviewer_result,
+        suggestion_result=row.suggestion_result,
         prev_hash=row.prev_hash,
         canonical_json=row.canonical_json,
         executions=[

@@ -126,6 +126,9 @@ export interface AnalysisHistoryItem {
   reviewer_score: number | null
   reviewer_verdict: string | null
   confidence: number | null
+  signal: string | null
+  signal_score: number | null
+  groundedness: number | null
   evidence_count: number
   evidence_coverage: number | null
   agents_completed: number
@@ -144,6 +147,7 @@ export interface AnalysisDetailResponse extends AnalysisHistoryItem {
   evidence: Array<Record<string, unknown>>
   agent_results: Array<Record<string, unknown>>
   reviewer_result: Record<string, unknown> | null
+  suggestion_result: Record<string, unknown> | null
   executions: Array<Record<string, unknown>>
   prev_hash: string
   canonical_json: string

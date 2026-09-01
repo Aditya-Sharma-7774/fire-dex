@@ -14,6 +14,7 @@
 import { useCallback, useRef, useState } from 'react'
 
 import { API_BASE_URL } from '../../services/api'
+import type { Suggestion } from './SuggestionPanel'
 
 export type AgentPhase = 'waiting' | 'running' | 'completed' | 'failed' | 'skipped'
 
@@ -55,6 +56,10 @@ export interface AnalysisState {
   reanalysisReason: string | null
   summary: string | null
   reviewer: ReviewerOutcome | null
+  suggestion: Suggestion | null
+  /** Signal and groundedness arrive before the explanation, so the UI can
+   *  show them the moment they are computed. */
+  liveSignal: { signal: string | null; score: number | null; groundedness: number } | null
   conflicts: string[]
   resultId: string | null
   hash: string | null
@@ -74,6 +79,8 @@ const INITIAL: AnalysisState = {
   reanalysisReason: null,
   summary: null,
   reviewer: null,
+  suggestion: null,
+  liveSignal: null,
   conflicts: [],
   resultId: null,
   hash: null,
@@ -221,6 +228,17 @@ function applyEvent(event: Record<string, unknown>, setState: Setter) {
       }))
       break
 
+    case 'signal':
+      setState((prev) => ({
+        ...prev,
+        liveSignal: {
+          signal: (event.signal as string) ?? null,
+          score: (event.score as number) ?? null,
+          groundedness: (event.groundedness as number) ?? 0,
+        },
+      }))
+      break
+
     case 'reanalysis':
       setState((prev) => ({ ...prev, reanalysisReason: event.reason as string }))
       break
@@ -240,6 +258,7 @@ function applyEvent(event: Record<string, unknown>, setState: Setter) {
         running: false,
         summary: event.summary as string,
         reviewer: event.reviewer as unknown as ReviewerOutcome,
+        suggestion: (event.suggestion as unknown as Suggestion) ?? null,
         conflicts: (event.conflicts as string[]) ?? [],
         resultId: event.result_id as string,
         hash: event.hash as string,

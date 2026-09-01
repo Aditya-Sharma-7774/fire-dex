@@ -60,6 +60,7 @@ class Analysis(Base):
     evidence: Mapped[list] = mapped_column(JSON, default=list)
     agent_results: Mapped[list] = mapped_column(JSON, default=list)
     reviewer_result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    suggestion_result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # --- Fire Auditor metrics ---
     agent_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -75,6 +76,13 @@ class Analysis(Base):
     output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     data_stale: Mapped[bool] = mapped_column(default=False)
+
+    # Signal and groundedness are computed, not model-chosen, so they are
+    # first-class columns rather than buried in JSON -- they get queried
+    # for the analytics charts.
+    signal: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    signal_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    groundedness: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # --- integrity ---
     canonical_json: Mapped[str] = mapped_column(Text)

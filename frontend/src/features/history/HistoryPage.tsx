@@ -9,6 +9,7 @@ import {
   type VerificationResponse,
 } from '../../services/api'
 import { AgentTimeline } from '../ai/AgentTimeline'
+import { SuggestionPanel, type Suggestion } from '../ai/SuggestionPanel'
 
 /**
  * Analysis history: recorded analytics across all runs, plus a full
@@ -434,6 +435,14 @@ function AnalysisDetail({ resultId }: { resultId: string }) {
           />
         </div>
       </section>
+
+      {/* ---- suggestion: signal, groundedness and the explanations ---- */}
+      {detail.suggestion_result && (
+        <section>
+          <SectionTitle>Suggestion &amp; groundedness</SectionTitle>
+          <SuggestionPanel suggestion={detail.suggestion_result as unknown as Suggestion} />
+        </section>
+      )}
 
       {/* ---- agents working: timeline ---- */}
       <section>

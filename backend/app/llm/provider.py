@@ -21,6 +21,7 @@ the same cited facts -- rather than bit-identical output, and we store the
 model, provider and parameters with every result so a run can be re-attempted.
 """
 
+import asyncio
 import json
 import re
 from dataclasses import dataclass
@@ -28,12 +29,31 @@ from typing import Protocol
 
 import httpx
 
-from app.core.errors import ProviderError
+from app.core.errors import ProviderError, RateLimitError
 from app.core.logging import get_logger
 
 log = get_logger(__name__)
 
 LLM_TIMEOUT_SECONDS = 180.0
+
+#: How many times to wait out a 429 before giving up.
+RATE_LIMIT_RETRIES = 2
+#: Never wait longer than this for one retry, however long the server asks.
+MAX_RATE_LIMIT_WAIT = 30.0
+
+
+def _retry_after_seconds(response: httpx.Response) -> float | None:
+    """Seconds the server asked us to wait, if it said."""
+    header = response.headers.get("retry-after") or response.headers.get(
+        "x-ratelimit-reset-tokens"
+    )
+    if not header:
+        return None
+    try:
+        # Values arrive either as plain seconds or with a unit suffix.
+        return float(str(header).rstrip("s"))
+    except ValueError:
+        return None
 
 
 @dataclass
@@ -206,16 +226,52 @@ class GroqProvider:
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
 
-        try:
-            async with httpx.AsyncClient(timeout=LLM_TIMEOUT_SECONDS) as client:
-                response = await client.post(
-                    f"{self.BASE_URL}/chat/completions",
-                    json=payload,
-                    headers={"Authorization": f"Bearer {self._api_key}"},
-                )
-        except httpx.HTTPError as exc:
-            raise ProviderError("Could not reach Groq.", detail=str(exc)) from exc
+        # One analysis makes seven calls in quick succession -- five
+        # specialists, the reviewer, then the suggestion agent -- which is
+        # enough to trip a per-minute rate limit on a free tier. We measured
+        # exactly that: the specialists succeeded and the seventh call got a
+        # 429. Rate limits are a normal operating condition for this
+        # workload, not an error, so we wait and retry rather than
+        # discarding work that has already been paid for.
+        response = None
+        for attempt in range(RATE_LIMIT_RETRIES + 1):
+            try:
+                async with httpx.AsyncClient(timeout=LLM_TIMEOUT_SECONDS) as client:
+                    response = await client.post(
+                        f"{self.BASE_URL}/chat/completions",
+                        json=payload,
+                        headers={"Authorization": f"Bearer {self._api_key}"},
+                    )
+            except httpx.TimeoutException as exc:
+                raise ProviderError(
+                    f"{self._model} did not respond within {LLM_TIMEOUT_SECONDS:.0f}s.",
+                ) from exc
+            except httpx.HTTPError as exc:
+                raise ProviderError("Could not reach Groq.", detail=str(exc)) from exc
 
+            if response.status_code != 429:
+                break
+
+            if attempt == RATE_LIMIT_RETRIES:
+                raise RateLimitError(
+                    "Groq rate limit reached and did not clear.",
+                    detail=(
+                        "The free tier allows a limited number of tokens per minute. "
+                        "Wait a moment, or switch to the local model."
+                    ),
+                )
+
+            # Honour the server's own hint when it gives one; it knows
+            # better than a fixed backoff would.
+            wait = _retry_after_seconds(response) or (2.0 * (attempt + 1))
+            log.warning(
+                "groq_rate_limited_retrying",
+                attempt=attempt + 1,
+                waiting_seconds=round(wait, 1),
+            )
+            await asyncio.sleep(min(wait, MAX_RATE_LIMIT_WAIT))
+
+        assert response is not None
         if response.status_code >= 400:
             raise ProviderError(
                 f"Groq returned HTTP {response.status_code}.", detail=response.text[:300]
