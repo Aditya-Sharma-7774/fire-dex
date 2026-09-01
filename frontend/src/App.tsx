@@ -10,7 +10,7 @@ import { HoldingsPanel } from './features/portfolio/HoldingsPanel'
 import { isMockWalletRequested } from './features/wallet/devMockWallet'
 import { WalletAlerts } from './features/wallet/WalletAlerts'
 import { useWallet } from './features/wallet/WalletContext'
-import { api, ApiError, API_BASE_URL, type HealthResponse } from './services/api'
+import { api, ApiError, type HealthResponse } from './services/api'
 
 /**
  * Milestone 2 dashboard.
@@ -80,9 +80,7 @@ export default function App() {
 
             <HoldingsPanel />
             <MarketTable />
-            <StatusGrid health={health} healthError={healthError} loading={loading} />
-            <ChainGrid />
-            <PipelinePreview onOpenFireAi={() => setTab('fire-ai')} />
+            <ChainStrip />
           </>
         )}
 
@@ -139,125 +137,58 @@ function Hero() {
   const { status } = useWallet()
 
   return (
-    <section className="animate-fade-up text-center">
-      <div className="mx-auto mb-6 inline-flex items-center gap-2 rounded-full border border-fire-500/20 bg-fire-500/[0.07] px-3.5 py-1.5">
-        <span className="h-1.5 w-1.5 animate-pulse-slow rounded-full bg-fire-400" />
-        <span className="text-xs font-medium tracking-wide text-fire-300">
-          {status === 'connected' ? 'Wallet connected · Live chain data' : 'Milestone 2 · Wallet'}
-        </span>
+    <section className="animate-fade-up">
+      <div className="flex flex-wrap items-end justify-between gap-4 border-b hairline pb-5">
+        <div>
+          <h1 className="text-3xl font-bold leading-none tracking-tight sm:text-4xl">
+            Multi-Chain <span className="fire-text-animated">Smart Wallet</span>
+          </h1>
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-coal-400">
+            Live balances and prices, analysed by specialist agents that must cite their
+            evidence.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 text-[11px] text-coal-500">
+          <span className="relative flex h-1.5 w-1.5">
+            <span
+              className={`absolute inline-flex h-full w-full rounded-full opacity-60 ${
+                status === 'connected' ? 'animate-ping bg-emerald-400' : 'bg-coal-600'
+              }`}
+            />
+            <span
+              className={`relative inline-flex h-1.5 w-1.5 rounded-full ${
+                status === 'connected' ? 'bg-emerald-400' : 'bg-coal-600'
+              }`}
+            />
+          </span>
+          {status === 'connected' ? 'Wallet connected' : 'Wallet not connected'}
+        </div>
       </div>
-
-      <h1 className="mx-auto max-w-4xl text-4xl font-extrabold leading-[1.1] tracking-tight sm:text-5xl md:text-6xl">
-        Agentic AI-Powered
-        <br />
-        <span className="fire-text-animated">Multi-Chain Smart Wallet</span>
-      </h1>
-
-      <p className="mx-auto mt-5 max-w-2xl text-[15px] leading-relaxed text-coal-400">
-        A multi-chain wallet with an auditable multi-agent intelligence layer. Market, technical,
-        portfolio and on-chain evidence is combined into explainable decision support — every
-        result signed, hashed and independently verifiable.
-      </p>
     </section>
   )
 }
 
 /* ------------------------------------------------------------------ */
 
-function StatusGrid({
-  health,
-  healthError,
-  loading,
-}: {
-  health: HealthResponse | null
-  healthError: string | null
-  loading: boolean
-}) {
-  return (
-    <section className="stagger mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      <StatusCard
-        label="Backend API"
-        value={loading ? 'Checking…' : healthError ? 'Offline' : 'Online'}
-        tone={loading ? 'neutral' : healthError ? 'bad' : 'good'}
-        detail={healthError ?? API_BASE_URL}
-      />
-      <StatusCard
-        label="Safety Mode"
-        value={health ? health.mode.toUpperCase() : '—'}
-        tone={health?.mode === 'production' ? 'warn' : 'good'}
-        detail={
-          health?.mode === 'development'
-            ? 'No mainnet writes permitted'
-            : health?.mode === 'testnet'
-              ? 'Sepolia signing enabled'
-              : 'Waiting for backend'
-        }
-      />
-      <StatusCard
-        label="Version"
-        value={health ? `v${health.version}` : '—'}
-        tone="neutral"
-        detail={health ? health.app : 'Waiting for backend'}
-      />
-    </section>
-  )
-}
-
-type Tone = 'good' | 'bad' | 'warn' | 'neutral'
-
-const TONE_STYLES: Record<Tone, { text: string; dot: string }> = {
-  good: { text: 'text-emerald-400', dot: 'bg-emerald-400' },
-  bad: { text: 'text-red-400', dot: 'bg-red-500' },
-  warn: { text: 'text-amber-400', dot: 'bg-amber-400' },
-  neutral: { text: 'text-coal-200', dot: 'bg-coal-500' },
-}
-
-function StatusCard({
-  label,
-  value,
-  detail,
-  tone,
-}: {
-  label: string
-  value: string
-  detail: string
-  tone: Tone
-}) {
-  const styles = TONE_STYLES[tone]
-
-  return (
-    <div className="glass glass-hover p-5">
-      <div className="flex items-center gap-2">
-        <span className={`h-1.5 w-1.5 rounded-full ${styles.dot}`} />
-        <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-coal-400">
-          {label}
-        </span>
-      </div>
-      <div className={`mt-3 text-2xl font-bold tracking-tight ${styles.text}`}>{value}</div>
-      <div className="mt-1.5 truncate font-mono text-[11px] text-coal-500" title={detail}>
-        {detail}
-      </div>
-    </div>
-  )
-}
+/* ------------------------------------------------------------------ */
 
 /* ------------------------------------------------------------------ */
 
-function ChainGrid() {
-  const { chain: activeChain, switchToChain, status } = useWallet()
+/* ------------------------------------------------------------------ */
+
+function ChainStrip() {
+  const { chain: active, switchToChain, status } = useWallet()
 
   return (
-    <section className="mt-14">
-      <SectionHeading title="Supported Networks" note="Read mainnet · write testnet" />
+    <section className="mt-12">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="mr-1 text-[11px] uppercase tracking-[0.12em] text-coal-600">
+          Networks
+        </span>
 
-      {/*
-        Three columns at lg, not five. At five, "BNB Smart Chain" was being
-        truncated to "BNB Smart Cha…" -- a name being cut off in a wallet is
-        exactly the kind of ambiguity to avoid.
-      */}
-      <div className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {CHAIN_LIST.map((chain) => {
-          const selected = activeChain?.id === chain.id
+          const selected = active?.id === chain.id
           const selectable = chain.isActive && status === 'connected'
 
           return (
@@ -271,114 +202,28 @@ function ChainGrid() {
                   ? status === 'connected'
                     ? `Switch to ${chain.name}`
                     : 'Connect a wallet to switch networks'
-                  : 'Planned for a later milestone'
+                  : 'Planned for a later phase'
               }
-              className={`glass p-4 text-left transition-all duration-300 ${
+              className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-all ${
                 selected
-                  ? 'border-fire-500/40 bg-fire-500/[0.06] shadow-glow'
-                  : selectable
-                    ? 'hover:-translate-y-0.5 hover:border-fire-500/25 hover:bg-white/[0.05]'
-                    : 'opacity-60'
+                  ? 'border-fire-500/40 bg-fire-500/10 text-fire-300'
+                  : chain.isActive
+                    ? 'hairline text-coal-300 hover:border-fire-500/25 hover:bg-white/[0.04]'
+                    : 'hairline text-coal-600'
               } disabled:cursor-not-allowed`}
             >
-              <div className="flex items-center gap-2.5">
-                <span
-                  className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[11px] font-bold"
-                  style={{
-                    background: `${chain.color}1f`,
-                    border: `1px solid ${chain.color}55`,
-                    color: chain.color,
-                  }}
-                >
-                  {chain.shortName.slice(0, 3).toUpperCase()}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold leading-tight">{chain.name}</div>
-                  <div className="mt-0.5 font-mono text-[10px] uppercase tracking-wider text-coal-500">
-                    {chain.family}
-                    {chain.chainId !== null && ` · ${chain.chainId}`}
-                  </div>
-                </div>
-                {selected && <span className="shrink-0 text-xs text-fire-400">●</span>}
-              </div>
-
-              <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                {chain.isTestnet && (
-                  <span className="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400">
-                    Testnet
-                  </span>
-                )}
-                <span
-                  className={`rounded-md px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
-                    chain.isActive
-                      ? 'bg-emerald-500/10 text-emerald-400'
-                      : 'bg-coal-800 text-coal-400'
-                  }`}
-                >
-                  {chain.isActive ? 'Active' : 'Planned'}
-                </span>
-              </div>
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ background: chain.isActive ? chain.color : '#3e3e45' }}
+              />
+              {chain.name}
+              {chain.isTestnet && <span className="text-amber-500/80">test</span>}
+              {!chain.isActive && <span className="text-coal-700">soon</span>}
             </button>
           )
         })}
       </div>
     </section>
-  )
-}
-
-/* ------------------------------------------------------------------ */
-
-const PIPELINE = ['Evidence', 'Agents', 'Orchestrator', 'Reviewer', 'Fire Auditor', 'SHA-256']
-
-function PipelinePreview({ onOpenFireAi }: { onOpenFireAi: () => void }) {
-  return (
-    <section className="mt-14">
-      <SectionHeading title="Analysis Pipeline" note="Live — open Fire AI to run one" />
-
-      <div className="glass p-5 sm:p-6">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
-          {PIPELINE.map((step, index) => (
-            <div key={step} className="flex items-center gap-2">
-              <div className="rounded-xl border hairline bg-coal-900/60 px-3 py-2 text-xs font-medium text-coal-300 transition-colors hover:border-fire-500/25 hover:text-coal-100">
-                {step}
-              </div>
-              {index < PIPELINE.length - 1 && (
-                <span className="text-coal-700" aria-hidden="true">
-                  →
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t hairline pt-4">
-          <p className="max-w-2xl text-xs leading-relaxed text-coal-500">
-            Agents never fetch data and never produce numbers. Deterministic collectors build a
-            typed, timestamped evidence bundle; agents may only emit observations and
-            interpretations that cite evidence IDs. A validator rejects any output containing an
-            untraceable figure.
-          </p>
-          <button
-            type="button"
-            onClick={onOpenFireAi}
-            className="shrink-0 rounded-xl bg-gradient-to-br from-fire-500 to-fire-700 px-4 py-2 text-xs font-semibold text-white shadow-glow transition-all hover:shadow-glow-lg"
-          >
-            Run an analysis →
-          </button>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-/* ------------------------------------------------------------------ */
-
-function SectionHeading({ title, note }: { title: string; note: string }) {
-  return (
-    <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-      <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-coal-300">{title}</h2>
-      <span className="shrink-0 text-[11px] text-coal-500">{note}</span>
-    </div>
   )
 }
 

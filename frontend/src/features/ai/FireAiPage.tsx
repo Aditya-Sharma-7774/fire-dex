@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 
 import { api, type AiStatusResponse } from '../../services/api'
 import { useWallet } from '../wallet/WalletContext'
+import { BarRows, Gauge } from '../../components/charts/Charts'
 import { AgentGrid } from './AgentGrid'
+import { LiveAgentBars } from './LiveAgentBars'
 import { useAnalysis } from './useAnalysis'
 
 const SUGGESTIONS = [
@@ -25,7 +27,14 @@ export function FireAiPage() {
 
   const [symbol, setSymbol] = useState('ETH')
   const [includePortfolio, setIncludePortfolio] = useState(false)
-  const [prefer, setPrefer] = useState<'local' | 'online'>('local')
+  // null means "let the backend use its configured preference".
+  //
+  // This was previously initialised to 'local', which created a race: the
+  // AI-status request had not resolved yet, so clicking Run immediately
+  // sent the request down the slow local path even though an online
+  // provider was configured and preferred. Defaulting to null removes the
+  // race rather than papering over it with a loading guard.
+  const [prefer, setPrefer] = useState<'local' | 'online' | null>(null)
   const [ai, setAi] = useState<AiStatusResponse | null>(null)
 
   const walletReady = status === 'connected' && address && chain && !isUnsupportedNetwork
@@ -33,10 +42,7 @@ export function FireAiPage() {
   useEffect(() => {
     api
       .aiStatus()
-      .then((s) => {
-        setAi(s)
-        setPrefer(s.preference === 'online' && s.online.available ? 'online' : 'local')
-      })
+      .then(setAi)
       .catch(() => setAi(null))
   }, [])
 
@@ -45,7 +51,7 @@ export function FireAiPage() {
       symbol: symbol.trim().toUpperCase() || undefined,
       chain: includePortfolio && walletReady ? chain.id : undefined,
       address: includePortfolio && walletReady ? address : undefined,
-      prefer,
+      prefer: prefer ?? undefined,
       query: `Analyse ${symbol.trim().toUpperCase()}${includePortfolio ? ' and my portfolio' : ''}`,
     })
   }
@@ -72,10 +78,13 @@ export function FireAiPage() {
               Model
             </span>
             <select
-              value={prefer}
-              onChange={(e) => setPrefer(e.target.value as 'local' | 'online')}
+              value={prefer ?? 'auto'}
+              onChange={(e) =>
+                setPrefer(e.target.value === 'auto' ? null : (e.target.value as 'local' | 'online'))
+              }
               className="w-full rounded-xl border hairline bg-coal-900/60 px-3 py-2.5 text-sm text-coal-100 outline-none transition-colors focus:border-fire-500/50"
             >
+              <option value="auto">Auto{ai ? ` (${ai.preference})` : ''}</option>
               <option value="local">
                 Local{ai && !ai.local.available ? ' (offline)' : ''}
               </option>
@@ -132,7 +141,7 @@ export function FireAiPage() {
 
           {ai && (
             <span className="ml-auto font-mono text-[10px] text-coal-600">
-              {prefer === 'local' ? ai.local.model : ai.online.model}
+              {(prefer ?? ai.preference) === 'local' ? ai.local.model : ai.online.model}
             </span>
           )}
         </div>
@@ -146,12 +155,15 @@ export function FireAiPage() {
       )}
 
       {(analysis.running || analysis.agents.length > 0) && (
-        <AgentGrid
-          agents={analysis.agents}
-          running={analysis.running}
-          reviewerDone={analysis.reviewer !== null}
-          auditDone={analysis.hash !== null}
-        />
+        <div className="space-y-3">
+          <AgentGrid
+            agents={analysis.agents}
+            running={analysis.running}
+            reviewerDone={analysis.reviewer !== null}
+            auditDone={analysis.hash !== null}
+          />
+          <LiveAgentBars agents={analysis.agents} running={analysis.running} />
+        </div>
       )}
 
       {analysis.summary && <ResultPanel analysis={analysis} />}
@@ -221,6 +233,53 @@ function ResultPanel({ analysis }: { analysis: ReturnType<typeof useAnalysis> })
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="mt-5 flex flex-wrap items-center gap-6 border-t hairline pt-4">
+            <Gauge
+              value={reviewer.score}
+              label={reviewer.score.toFixed(0)}
+              sublabel="reviewer score"
+              colour={
+                reviewer.verdict === 'APPROVED'
+                  ? '#34d399'
+                  : reviewer.verdict === 'REANALYZE'
+                    ? '#fbbf24'
+                    : '#f87171'
+              }
+              size={84}
+            />
+            <Gauge
+              value={reviewer.evidence_coverage * 100}
+              label={`${(reviewer.evidence_coverage * 100).toFixed(0)}%`}
+              sublabel="evidence used"
+              colour="#34d399"
+              size={84}
+            />
+            <Gauge
+              value={reviewer.confidence * 100}
+              label={reviewer.confidence.toFixed(2)}
+              sublabel="confidence"
+              colour="#a78bfa"
+              size={84}
+            />
+
+            <div className="min-w-[220px] flex-1">
+              <div className="mb-2 text-[10px] uppercase tracking-wide text-coal-500">
+                Work done per agent
+              </div>
+              <BarRows
+                data={analysis.agents
+                  .filter((a) => a.durationMs != null)
+                  .map((a) => ({
+                    label: a.name.replace(/_/g, ' '),
+                    value: (a.durationMs ?? 0) / 1000,
+                  }))}
+                colour="#60a5fa"
+                formatValue={(v) => v.toFixed(1)}
+                unit="s"
+              />
+            </div>
           </div>
 
           <div className="mt-5 grid gap-3 border-t hairline pt-4 sm:grid-cols-4">
