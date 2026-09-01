@@ -2,17 +2,20 @@ import { NetworkSelector } from '../features/wallet/NetworkSelector'
 import { WalletButton } from '../features/wallet/WalletButton'
 import type { HealthResponse } from '../services/api'
 
+type Tab = 'dashboard' | 'fire-ai' | 'history'
+
 interface HeaderProps {
   health: HealthResponse | null
   healthError: string | null
   loading: boolean
+  tab: Tab
+  onTabChange: (tab: Tab) => void
 }
 
-const NAV_ITEMS = [
-  { label: 'Dashboard', active: true },
-  { label: 'Fire AI', active: false },
-  { label: 'History', active: false },
-  { label: 'Audit', active: false },
+const NAV_ITEMS: { label: string; tab: Tab }[] = [
+  { label: 'Dashboard', tab: 'dashboard' },
+  { label: 'Fire AI', tab: 'fire-ai' },
+  { label: 'History', tab: 'history' },
 ]
 
 /**
@@ -24,12 +27,16 @@ const NAV_ITEMS = [
  * and every group is allowed to shrink -- otherwise the two sides collide
  * at around 1024px as soon as real data arrives.
  */
-export function Header({ health, healthError, loading }: HeaderProps) {
+export function Header({ health, healthError, loading, tab, onTabChange }: HeaderProps) {
   return (
     <header className="sticky top-0 z-40 border-b hairline bg-coal-950/80 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-3 px-4 sm:px-6">
         {/* Logo */}
-        <a href="#top" className="group flex shrink-0 items-center gap-2.5">
+        <button
+          type="button"
+          onClick={() => onTabChange('dashboard')}
+          className="group flex shrink-0 items-center gap-2.5"
+        >
           <div className="relative grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-fire-400 to-fire-700 shadow-glow transition-transform duration-300 group-hover:scale-105">
             <span className="text-lg leading-none">🔥</span>
           </div>
@@ -41,21 +48,20 @@ export function Header({ health, healthError, loading }: HeaderProps) {
               Multi-Chain Intelligence
             </div>
           </div>
-        </a>
+        </button>
 
         {/* Navigation. Hidden below xl so it cannot collide with the wallet
             controls once an address is displayed. */}
-        <nav className="ml-4 hidden min-w-0 items-center gap-1 xl:flex">
+        <nav className="ml-4 hidden min-w-0 items-center gap-1 lg:flex">
           {NAV_ITEMS.map((item) => (
             <button
-              key={item.label}
+              key={item.tab}
               type="button"
-              disabled={!item.active}
-              title={item.active ? undefined : 'Coming in a later milestone'}
+              onClick={() => onTabChange(item.tab)}
               className={
-                item.active
-                  ? 'relative rounded-lg bg-fire-500/10 px-3 py-1.5 text-sm font-medium text-fire-300'
-                  : 'rounded-lg px-3 py-1.5 text-sm font-medium text-coal-500 transition-colors hover:text-coal-300 disabled:cursor-not-allowed disabled:hover:text-coal-500'
+                tab === item.tab
+                  ? 'rounded-lg bg-fire-500/10 px-3 py-1.5 text-sm font-medium text-fire-300'
+                  : 'rounded-lg px-3 py-1.5 text-sm font-medium text-coal-500 transition-colors hover:bg-white/[0.04] hover:text-coal-200'
               }
             >
               {item.label}

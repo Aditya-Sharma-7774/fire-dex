@@ -101,6 +101,63 @@ export interface TokenConfigResponse {
   is_stablecoin: boolean
 }
 
+export interface AiProviderStatus {
+  provider: string
+  model: string
+  available: boolean
+  base_url?: string
+}
+
+export interface AiStatusResponse {
+  preference: string
+  local: AiProviderStatus
+  online: AiProviderStatus
+  any_available: boolean
+}
+
+export interface AnalysisHistoryItem {
+  result_id: string
+  query: string
+  subject: string
+  chain: string | null
+  model: string | null
+  provider: string | null
+  mode: string | null
+  reviewer_score: number | null
+  reviewer_verdict: string | null
+  confidence: number | null
+  evidence_count: number
+  evidence_coverage: number | null
+  agents_completed: number
+  agents_failed: number
+  duration_ms: number | null
+  input_tokens: number | null
+  output_tokens: number | null
+  data_stale: boolean
+  result_hash: string
+  created_at: string
+}
+
+export interface AnalysisDetailResponse extends AnalysisHistoryItem {
+  address: string | null
+  summary: string | null
+  evidence: Array<Record<string, unknown>>
+  agent_results: Array<Record<string, unknown>>
+  reviewer_result: Record<string, unknown> | null
+  executions: Array<Record<string, unknown>>
+  prev_hash: string
+  canonical_json: string
+}
+
+export interface VerificationResponse {
+  result_id: string
+  valid: boolean
+  stored_hash: string
+  computed_hash: string
+  chain_intact: boolean
+  message: string
+}
+
 /** Shape of the backend's error responses. */
 interface ApiErrorBody {
   error: string
@@ -208,6 +265,17 @@ export const api = {
 
   portfolio: (chain: string, address: string) =>
     request<PortfolioResponse>(`/api/v1/portfolio/${chain}/${address}`),
+
+  aiStatus: () => request<AiStatusResponse>('/api/v1/ai/status'),
+
+  history: (limit = 25) =>
+    request<AnalysisHistoryItem[]>(`/api/v1/analysis/history?limit=${limit}`),
+
+  analysis: (resultId: string) =>
+    request<AnalysisDetailResponse>(`/api/v1/analysis/${resultId}`),
+
+  verify: (resultId: string) =>
+    request<VerificationResponse>(`/api/v1/analysis/${resultId}/verify`),
 }
 
 export { API_BASE_URL }

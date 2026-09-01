@@ -203,3 +203,24 @@ def test_staleness_propagates_to_the_bundle() -> None:
     )
 
     assert builder.build().is_stale()
+
+
+def test_numbers_in_the_unit_string_are_quotable() -> None:
+    """Regression: an agent wrote "traded in the last 24 h", quoting the
+    UNIT of the cited evidence ("% of market cap traded in 24h"), and was
+    rejected for stating 24 with no support. Units are part of the fact.
+    """
+    builder = EvidenceBuilder(subject="ETH")
+    builder.add(
+        EvidenceKind.RISK_FACTOR, "Risk factor: liquidity", 3.814,
+        unit="% of market cap traded in 24h",
+        provider="fire-dex-risk-model", method="weight 0.25",
+    )
+    bundle = builder.build()
+
+    result = _result(
+        [Observation(text="Liquidity equals 3.814% of market cap traded in the last 24 h", evidence_ids=["ev_001"])]
+    )
+
+    report = validate_agent_output(result, bundle)
+    assert report.valid, f"False positive: {report.summary()}"

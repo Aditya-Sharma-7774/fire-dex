@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 
 import { Header } from './components/Header'
 import { CHAIN_LIST } from './config/chains'
+import { FireAiPage } from './features/ai/FireAiPage'
+import { HistoryPage } from './features/history/HistoryPage'
 import { MarketTable } from './features/market/MarketTable'
 import { BalanceCard } from './features/portfolio/BalanceCard'
 import { HoldingsPanel } from './features/portfolio/HoldingsPanel'
@@ -16,7 +18,10 @@ import { api, ApiError, API_BASE_URL, type HealthResponse } from './services/api
  * Everything shown is either real or explicitly marked as not built yet.
  * There are no placeholder balances, no sample prices and no mock charts.
  */
+export type Tab = 'dashboard' | 'fire-ai' | 'history'
+
 export default function App() {
+  const [tab, setTab] = useState<Tab>('dashboard')
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [healthError, setHealthError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -55,21 +60,34 @@ export default function App() {
       <AmbientBackground />
 
       <MockWalletBanner />
-      <Header health={health} healthError={healthError} loading={loading} />
+      <Header
+        health={health}
+        healthError={healthError}
+        loading={loading}
+        tab={tab}
+        onTabChange={setTab}
+      />
       <WalletAlerts />
 
       <main className="relative mx-auto w-full max-w-7xl flex-1 px-4 py-10 sm:px-6 sm:py-12">
-        <Hero />
+        {tab === 'dashboard' && (
+          <>
+            <Hero />
 
-        <div className="mt-10 sm:mt-12">
-          <BalanceCard />
-        </div>
+            <div className="mt-10 sm:mt-12">
+              <BalanceCard />
+            </div>
 
-        <HoldingsPanel />
-        <MarketTable />
-        <StatusGrid health={health} healthError={healthError} loading={loading} />
-        <ChainGrid />
-        <PipelinePreview />
+            <HoldingsPanel />
+            <MarketTable />
+            <StatusGrid health={health} healthError={healthError} loading={loading} />
+            <ChainGrid />
+            <PipelinePreview onOpenFireAi={() => setTab('fire-ai')} />
+          </>
+        )}
+
+        {tab === 'fire-ai' && <FireAiPage />}
+        {tab === 'history' && <HistoryPage />}
       </main>
 
       <Footer />
@@ -312,10 +330,10 @@ function ChainGrid() {
 
 const PIPELINE = ['Evidence', 'Agents', 'Orchestrator', 'Reviewer', 'Fire Auditor', 'SHA-256']
 
-function PipelinePreview() {
+function PipelinePreview({ onOpenFireAi }: { onOpenFireAi: () => void }) {
   return (
     <section className="mt-14">
-      <SectionHeading title="Analysis Pipeline" note="Built in phases 5–8" />
+      <SectionHeading title="Analysis Pipeline" note="Live — open Fire AI to run one" />
 
       <div className="glass p-5 sm:p-6">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
@@ -333,11 +351,21 @@ function PipelinePreview() {
           ))}
         </div>
 
-        <p className="mt-5 border-t hairline pt-4 text-xs leading-relaxed text-coal-500">
-          Agents never fetch data and never produce numbers. Deterministic collectors build a
-          typed, timestamped evidence bundle; agents may only emit observations and interpretations
-          that cite evidence IDs. A validator rejects any output containing an untraceable figure.
-        </p>
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t hairline pt-4">
+          <p className="max-w-2xl text-xs leading-relaxed text-coal-500">
+            Agents never fetch data and never produce numbers. Deterministic collectors build a
+            typed, timestamped evidence bundle; agents may only emit observations and
+            interpretations that cite evidence IDs. A validator rejects any output containing an
+            untraceable figure.
+          </p>
+          <button
+            type="button"
+            onClick={onOpenFireAi}
+            className="shrink-0 rounded-xl bg-gradient-to-br from-fire-500 to-fire-700 px-4 py-2 text-xs font-semibold text-white shadow-glow transition-all hover:shadow-glow-lg"
+          >
+            Run an analysis →
+          </button>
+        </div>
       </div>
     </section>
   )

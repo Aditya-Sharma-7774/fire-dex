@@ -214,8 +214,11 @@ def _check_numbers(
         if numeric is not None:
             cited_values.append(numeric)
 
-        # Numbers embedded in the label are quotable too.
-        for token in _NUMBER_PATTERN.findall(evidence.label):
+        # Numbers embedded in the label or the unit are quotable too. The
+        # unit matters as much as the label: "% of market cap traded in
+        # 24h" invites the agent to write "in the last 24 h", and a live
+        # run failed on exactly that.
+        for token in _NUMBER_PATTERN.findall(f"{evidence.label} {evidence.unit or ''}"):
             try:
                 cited_values.append(float(token.replace(",", "")))
             except ValueError:

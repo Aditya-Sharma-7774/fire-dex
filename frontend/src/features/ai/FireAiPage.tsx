@@ -146,7 +146,12 @@ export function FireAiPage() {
       )}
 
       {(analysis.running || analysis.agents.length > 0) && (
-        <AgentGrid analysis={analysis} />
+        <AgentGrid
+          agents={analysis.agents}
+          running={analysis.running}
+          reviewerDone={analysis.reviewer !== null}
+          auditDone={analysis.hash !== null}
+        />
       )}
 
       {analysis.summary && <ResultPanel analysis={analysis} />}

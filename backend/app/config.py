@@ -85,7 +85,11 @@ class Settings(BaseSettings):
     # Online provider. No key means online mode is simply unavailable --
     # the app falls back to Ollama rather than failing.
     groq_api_key: str = ""
-    groq_model: str = "llama-3.3-70b-versatile"
+    # Verified against Groq's /models endpoint. Provider model names are
+    # rotated and retired -- an earlier default returned HTTP 404 because
+    # the Llama models had been withdrawn. Check /api/v1/ai/status if
+    # analyses start failing with 404.
+    groq_model: str = "openai/gpt-oss-120b"
 
     # Local provider.
     ollama_base_url: str = "http://localhost:11434"
