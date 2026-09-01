@@ -8,6 +8,13 @@ from app.blockchain.adapters.evm import EvmAdapter
 from app.blockchain.factory import get_adapter
 from app.config import Settings, get_settings
 from app.core.errors import ChainNotSupportedError
+from app.indicators.service import (
+    IndicatorSeries,
+    IndicatorSnapshot,
+    build_series,
+    build_snapshot,
+)
+from app.market.candles import get_candle_provider
 from app.market.service import MarketDataService, get_market_service
 from app.market.types import Price
 from app.services.portfolio import build_portfolio
@@ -79,3 +86,32 @@ async def get_portfolio(
         market=market,
         include_zero_balances=include_zero,
     )
+
+
+@router.get("/candles/{symbol}", response_model=IndicatorSeries)
+async def get_candles(
+    symbol: Annotated[str, Path(description="Token symbol, e.g. 'ETH'")],
+    interval: Annotated[str, Query(description="5m, 15m, 1h, 4h, 1d or 1w")] = "1h",
+    limit: Annotated[int, Query(ge=50, le=1000, description="Number of candles")] = 300,
+) -> IndicatorSeries:
+    """OHLCV candles with indicator series, for charting.
+
+    Indicators are computed by our own tested engine, never by a model.
+    """
+    candles = await get_candle_provider().get_candles(symbol, interval, limit)
+    return build_series(symbol, interval, candles)
+
+
+@router.get("/indicators/{symbol}", response_model=IndicatorSnapshot)
+async def get_indicators(
+    symbol: Annotated[str, Path(description="Token symbol, e.g. 'ETH'")],
+    interval: Annotated[str, Query(description="5m, 15m, 1h, 4h, 1d or 1w")] = "1h",
+) -> IndicatorSnapshot:
+    """Latest value of every indicator for one asset.
+
+    This is exactly what the Technical Analysis Agent receives. It never
+    sees a price series or a chart -- only these computed numbers, which it
+    may interpret but must cite.
+    """
+    candles = await get_candle_provider().get_candles(symbol, interval, 300)
+    return build_snapshot(symbol, interval, candles)

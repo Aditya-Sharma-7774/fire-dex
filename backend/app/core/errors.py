@@ -44,6 +44,13 @@ class InvalidAddressError(FireDexError):
     error_code = "invalid_address"
 
 
+class NotFoundError(FireDexError):
+    """The requested record does not exist."""
+
+    status_code = 404
+    error_code = "not_found"
+
+
 class ChainNotSupportedError(FireDexError):
     """No adapter exists for the requested chain."""
 

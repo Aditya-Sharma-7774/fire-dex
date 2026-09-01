@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from app.api.v1 import chains as chains_router
+from app.api.v1 import analysis as analysis_router
 from app.api.v1 import market as market_router
 from app.config import AppMode, Settings, get_settings
 from app.core.errors import FireDexError, firedex_error_handler
@@ -72,6 +73,10 @@ async def lifespan(app: FastAPI):
         debug=settings.debug,
     )
 
+    from app.database.session import init_database
+
+    await init_database()
+
     if settings.app_mode is AppMode.PRODUCTION:
         # Loud, because production mode means mainnet reads are permitted.
         log.warning("production_mode_enabled", note="mainnet data access is allowed")
@@ -109,6 +114,7 @@ app.add_exception_handler(FireDexError, firedex_error_handler)  # type: ignore[a
 
 app.include_router(chains_router.router, prefix="/api/v1")
 app.include_router(market_router.router, prefix="/api/v1")
+app.include_router(analysis_router.router, prefix="/api/v1")
 
 
 # ---------------------------------------------------------------------

@@ -78,6 +78,24 @@ class Settings(BaseSettings):
     sepolia_rpc_url: str = "https://ethereum-sepolia-rpc.publicnode.com"
     bsc_rpc_url: str = ""
 
+    # --- AI providers ------------------------------------------------
+    # Which to prefer when both are usable: "online" or "local".
+    llm_preference: str = "online"
+
+    # Online provider. No key means online mode is simply unavailable --
+    # the app falls back to Ollama rather than failing.
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
+
+    # Local provider.
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3.1:8b"
+
+    # --- Analysis limits ---------------------------------------------
+    # The reviewer may request one re-analysis. Bounded so a disagreement
+    # between reviewer and orchestrator cannot loop forever.
+    max_reanalysis_attempts: int = 1
+
     def rpc_url_for(self, chain_id: str) -> str | None:
         """RPC endpoint for a chain key, or None if not configured.
 

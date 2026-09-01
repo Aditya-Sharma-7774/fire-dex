@@ -54,3 +54,6 @@ desktop.ini
 # ---------------------------------------------------------------
 *.log
 logs/
+
+# local analysis database
+backend/data/

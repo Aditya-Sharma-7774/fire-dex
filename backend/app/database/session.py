@@ -1,0 +1,81 @@
+"""Database engine and session management.
+
+SQLite for the prototype: no server, no Docker, no configuration. Because
+everything goes through SQLAlchemy, moving to PostgreSQL later is a change
+to one connection string.
+"""
+
+from collections.abc import AsyncGenerator
+from pathlib import Path
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from app.config import get_settings
+from app.core.logging import get_logger
+from app.database.models import Base
+
+log = get_logger(__name__)
+
+_engine = None
+_session_factory: async_sessionmaker[AsyncSession] | None = None
+
+
+def _database_path(url: str) -> Path | None:
+    """Filesystem path for a SQLite URL, so we can create the directory."""
+    marker = "sqlite+aiosqlite:///"
+    if not url.startswith(marker):
+        return None
+    return Path(url[len(marker) :]).resolve()
+
+
+def get_engine():
+    global _engine
+    if _engine is None:
+        settings = get_settings()
+        url = settings.database_url
+
+        # SQLite will not create a missing directory for the database file.
+        path = _database_path(url)
+        if path is not None:
+            path.parent.mkdir(parents=True, exist_ok=True)
+
+        _engine = create_async_engine(url, echo=False, future=True)
+        log.info("database_engine_created", url=url.split("://")[0])
+    return _engine
+
+
+def get_session_factory() -> async_sessionmaker[AsyncSession]:
+    global _session_factory
+    if _session_factory is None:
+        _session_factory = async_sessionmaker(
+            get_engine(), class_=AsyncSession, expire_on_commit=False
+        )
+    return _session_factory
+
+
+async def init_database() -> None:
+    """Create tables if they do not exist.
+
+    Adequate for the prototype. Alembic migrations arrive with the first
+    schema change that has to preserve existing data.
+    """
+    engine = get_engine()
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    log.info("database_ready")
+
+
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """FastAPI dependency yielding a session."""
+    factory = get_session_factory()
+    async with factory() as session:
+        yield session
+
+
+async def reset_engine() -> None:
+    """Dispose of the engine. Used by tests between cases."""
+    global _engine, _session_factory
+    if _engine is not None:
+        await _engine.dispose()
+    _engine = None
+    _session_factory = None
