@@ -52,7 +52,8 @@ While editing backend code, use **`DEV_BACKEND.bat`** instead of the backend win
 
 | File | What it's for |
 |---|---|
-| [docs/PHASES.md](docs/PHASES.md) | **Start here.** The project explained in plain language, phase by phase, with what to say to professors |
+| [docs/PRESENTATION.md](docs/PRESENTATION.md) | **For the demo.** End-to-end: what's unique, stack, algorithms, APIs, on-chain vs off-chain, demo script, likely questions |
+| [docs/PHASES.md](docs/PHASES.md) | The project explained in plain language, phase by phase, with what to say to professors |
 | [docs/VIVA.md](docs/VIVA.md) | Technical question bank for the viva — Python, agents, blockchain, security |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Why the system is shaped the way it is |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Milestone plan and scope decisions |
