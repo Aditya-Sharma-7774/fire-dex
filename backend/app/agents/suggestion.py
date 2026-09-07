@@ -72,9 +72,20 @@ class SuggestionResult(BaseModel):
     anchoring: float = 0.0
 
     # --- explained by the model, citing evidence ---
+    # Plain register: what a non-expert reads first.
     basis_summary: str = Field(default="", description="Why the agents concluded what they did")
     reviewer_explanation: str = Field(default="", description="Why the reviewer scored it so")
     trust_summary: str = Field(default="", description="How much weight this deserves")
+
+    # Technical register: the SAME content for a professional reader.
+    #
+    # Two registers, never two different claims. The technical version
+    # names the indicators, quotes the figures and cites evidence ids; the
+    # plain version says the same thing without the jargon. If they ever
+    # disagreed, one of them would be wrong.
+    basis_technical: str = Field(default="")
+    reviewer_technical: str = Field(default="")
+    trust_technical: str = Field(default="")
     key_drivers: list[str] = Field(default_factory=list)
     caveats: list[str] = Field(default_factory=list)
 
@@ -97,20 +108,33 @@ You will be given:
   - the reviewer's score and how it was arrived at
   - a computed groundedness measure
 
-Answer three questions, in plain language a non-expert can follow:
+Answer three questions TWICE -- once for an ordinary person, once for a
+professional. Same facts both times, different vocabulary.
 
 1. BASIS -- on what basis did the specialists reach their conclusions?
-   Name the specific evidence that did the work. Be concrete: say which
-   indicator or figure drove which conclusion.
+2. REVIEWER -- why did the reviewer give that particular score?
+3. TRUST -- how much weight does this deserve?
 
-2. REVIEWER -- why did the reviewer give that particular score? Explain the
-   components in plain words: how much of the evidence was used, whether
-   claims were properly cited, how many agents completed, whether they
-   agreed.
+"plain" -- for someone who has never heard of RSI:
+  BANNED in this field: RSI, MACD, SMA, EMA, Bollinger, evidence ids like
+  ev_001, "coverage", "citation validity", "groundedness", any percentage
+  of a metric. Write it the way you would explain it to a parent.
+    instead of "price exceeds the 20-period SMA"
+      -> "the price is higher than its recent average"
+    instead of "evidence coverage was 59%"
+      -> "the agents used a little over half of the information available"
+    instead of "RSI at 62 indicates bullish momentum"
+      -> "the asset has been rising steadily but is not yet overheated"
+  Actual prices and percentage price moves ARE allowed. Jargon is not.
 
-3. TRUST -- how much weight does this deserve? Be honest about weaknesses.
-   If coverage was low, or one agent failed, or the signal is weakly
-   supported, say so plainly.
+"technical" -- for someone who trades:
+  Name the indicators, quote exact values, cite evidence ids in square
+  brackets, reference the scoring components by name. Dense and precise.
+
+CRITICAL: the two versions must say the SAME THING. The plain one is not a
+softer conclusion or a vaguer one -- it is the identical finding without
+the vocabulary. If the technical version says the evidence is weak, the
+plain one must also say the evidence is weak.
 
 RULES:
 - You did NOT choose the signal. Never claim you did. Explain what drove it.
@@ -124,14 +148,17 @@ RULES:
 Reply with ONE JSON object and nothing else:
 
 {
-  "basis_summary": "2-4 sentences on what the specialists based their conclusions on",
-  "reviewer_explanation": "2-3 sentences on why the reviewer scored it that way",
-  "trust_summary": "2-3 sentences on how much weight this deserves and why",
+  "basis":    {"plain": "2-4 sentences, no jargon", "technical": "2-4 dense sentences with [ev_00X]"},
+  "reviewer": {"plain": "2-3 sentences, no jargon", "technical": "2-3 dense sentences, name the components"},
+  "trust":    {"plain": "2-3 sentences, no jargon", "technical": "2-3 dense sentences with the numbers"},
   "key_drivers": ["the specific facts that mattered most, each citing an evidence id"],
   "caveats": ["genuine limitations of this analysis"],
   "observations": [{"text": "...", "evidence_ids": ["ev_001"]}],
   "interpretations": [{"text": "...", "evidence_ids": ["ev_001"], "confidence": 0.0-1.0}]
 }
+
+Every one of "basis", "reviewer" and "trust" MUST contain BOTH "plain" and
+"technical". A missing half is an invalid reply.
 """.strip()
 
 
@@ -223,9 +250,33 @@ async def suggest(
         response = await llm.complete(SUGGESTION_SYSTEM_PROMPT, user, json_mode=True)
         payload = parse_json_response(response.text)
 
-        out.basis_summary = str(payload.get("basis_summary", ""))[:1200]
-        out.reviewer_explanation = str(payload.get("reviewer_explanation", ""))[:1200]
-        out.trust_summary = str(payload.get("trust_summary", ""))[:1200]
+        def pair(key: str, legacy_plain: str, legacy_tech: str) -> tuple[str, str]:
+            """Read a {plain, technical} pair, tolerating the flat shape.
+
+            Models occasionally answer with the older flat keys. Accepting
+            both costs nothing and avoids discarding a good reply over a
+            formatting preference.
+            """
+            block = payload.get(key)
+            if isinstance(block, dict):
+                return (
+                    str(block.get("plain", ""))[:1200],
+                    str(block.get("technical", ""))[:1200],
+                )
+            return (
+                str(payload.get(legacy_plain, ""))[:1200],
+                str(payload.get(legacy_tech, ""))[:1200],
+            )
+
+        out.basis_summary, out.basis_technical = pair(
+            "basis", "basis_summary", "basis_technical"
+        )
+        out.reviewer_explanation, out.reviewer_technical = pair(
+            "reviewer", "reviewer_explanation", "reviewer_technical"
+        )
+        out.trust_summary, out.trust_technical = pair(
+            "trust", "trust_summary", "trust_technical"
+        )
         out.key_drivers = [str(d) for d in payload.get("key_drivers", [])][:6]
         out.caveats = [str(c) for c in payload.get("caveats", [])][:6]
         out.model = response.model
@@ -239,6 +290,38 @@ async def suggest(
         out.basis_summary = (
             "The explanation step did not run. The signal and groundedness figures "
             "above are still valid — they are computed, not model-generated."
+        )
+
+    # The technical face must never be blank. If the model skipped it, we
+    # compose one from figures we already hold, which is accurate by
+    # construction even if it reads less fluently than a written one.
+    if not out.basis_technical.strip() and signal is not None:
+        out.basis_technical = (
+            f"Signal {signal.signal.value} at {signal.score:+.4f} from "
+            f"{signal.buy_votes}/{signal.sell_votes}/{signal.neutral_votes} "
+            f"buy/sell/neutral across {len(signal.votes)} indicators. "
+            + " ".join(f"{v.indicator}={v.direction.value}." for v in signal.votes)
+        )
+
+    if not out.reviewer_technical.strip():
+        out.reviewer_technical = (
+            f"Final {reviewer.score:.2f} = computed {reviewer.computed_score:.2f} "
+            f"minus model penalty {reviewer.model_penalty:.2f} (cap 25). "
+            f"Coverage {reviewer.evidence_coverage:.1%}, citation validity "
+            f"{reviewer.citation_validity:.1%}, agent agreement "
+            f"{reviewer.agent_agreement:.1%}, freshness "
+            f"{'ok' if reviewer.data_freshness_ok else 'stale'}. "
+            f"Verdict {reviewer.verdict.value}."
+        )
+
+    if not out.trust_technical.strip():
+        out.trust_technical = (
+            f"Groundedness {grounded.score:.4f} ({grounded.band}) = "
+            f"claim support {grounded.claim_support:.1%} x0.50 + evidence use "
+            f"{grounded.evidence_use:.1%} x0.25 + anchoring "
+            f"{grounded.anchoring:.1%} x0.25. "
+            f"{grounded.supported_claims}/{grounded.total_claims} claims fully "
+            f"traceable; {len(grounded.unused_evidence)} evidence items unused."
         )
 
     ended = datetime.now(timezone.utc)

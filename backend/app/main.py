@@ -7,6 +7,7 @@ Run it with:
     uvicorn app.main:app --reload
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -74,14 +75,24 @@ async def lifespan(app: FastAPI):
     )
 
     from app.database.session import init_database
+    from app.market.service import get_market_service
 
     await init_database()
+
+    # Prime the price cache and keep it primed, so a user request is
+    # essentially always a cache hit rather than a cold network call.
+    market = get_market_service()
+    warm_task = asyncio.create_task(market.warm())
+    refresh_task = asyncio.create_task(market.keep_warm())
 
     if settings.app_mode is AppMode.PRODUCTION:
         # Loud, because production mode means mainnet reads are permitted.
         log.warning("production_mode_enabled", note="mainnet data access is allowed")
 
     yield
+
+    for task in (warm_task, refresh_task):
+        task.cancel()
 
     log.info("fire_dex_shutdown")
 

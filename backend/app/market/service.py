@@ -14,6 +14,8 @@ do is show it unlabelled. Step 5 exists because "we do not know this price"
 is a legitimate answer, and far better than a fabricated one.
 """
 
+import asyncio
+
 from app.core.logging import get_logger
 from app.market.cache import TtlCache
 from app.market.providers import CoinbaseProvider, CoinGeckoProvider, MarketDataProvider
@@ -28,6 +30,10 @@ PRICE_TTL_SECONDS = 45.0
 
 # Past this age a cached price is no longer worth showing at all.
 MAX_STALE_AGE_SECONDS = 900.0  # 15 minutes
+
+# Refresh slightly before the TTL expires so an entry is replaced while it
+# is still fresh. This is what keeps user requests off the network path.
+REFRESH_INTERVAL_SECONDS = 40.0
 
 
 class MarketDataService:
@@ -96,6 +102,47 @@ class MarketDataService:
         # 5. anything still missing is simply absent from the result, and the
         #    caller reports it as unpriced.
         return result
+
+    async def warm(self) -> int:
+        """Populate the cache before anyone asks.
+
+        The first page load was paying for a cold CoinGecko round trip
+        (~1-1.5s) while the user watched a skeleton. Fetching once at
+        startup makes that first request a cache hit instead.
+
+        Returns how many assets were primed. Never raises: a failure here
+        just means the first request pays what it used to.
+        """
+        from app.tokens.registry import all_coingecko_ids
+
+        try:
+            prices = await self.get_prices(all_coingecko_ids())
+            log.info("price_cache_warmed", assets=len(prices))
+            return len(prices)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("price_cache_warm_failed", error=str(exc))
+            return 0
+
+    async def keep_warm(self, interval_seconds: float = REFRESH_INTERVAL_SECONDS) -> None:
+        """Refresh the cache just before it expires, forever.
+
+        With a 45-second TTL and a 40-second refresh, an entry is replaced
+        while it is still fresh, so a user request is essentially always a
+        cache hit. Without this, whoever asks first after each expiry pays
+        the network cost on everyone else's behalf.
+
+        Runs as a background task for the life of the process.
+        """
+        from app.tokens.registry import all_coingecko_ids
+
+        while True:
+            await asyncio.sleep(interval_seconds)
+            try:
+                # Force a refresh by bypassing the fresh-cache check: ask
+                # the provider directly and overwrite what is stored.
+                await self._try_provider(self._primary, all_coingecko_ids())
+            except Exception as exc:  # noqa: BLE001
+                log.warning("price_refresh_failed", error=str(exc))
 
     async def _try_provider(
         self, provider: MarketDataProvider, coin_ids: list[str]

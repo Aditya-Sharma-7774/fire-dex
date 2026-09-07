@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import { Gauge } from '../../components/charts/Charts'
 
 /**
@@ -29,6 +31,9 @@ export interface Suggestion {
   basis_summary: string
   reviewer_explanation: string
   trust_summary: string
+  basis_technical?: string
+  reviewer_technical?: string
+  trust_technical?: string
   key_drivers: string[]
   caveats: string[]
   disclaimer: string
@@ -185,22 +190,25 @@ export function SuggestionPanel({ suggestion }: { suggestion: Suggestion }) {
         </details>
       )}
 
-      {/* ---- explanations ---- */}
+      {/* ---- explanations, each flippable to a technical reading ---- */}
       <div className="grid gap-4 lg:grid-cols-3">
-        <Explanation
+        <FlipExplanation
           title="On what basis"
           note="what drove the agents"
-          body={suggestion.basis_summary}
+          plain={suggestion.basis_summary}
+          technical={suggestion.basis_technical}
         />
-        <Explanation
+        <FlipExplanation
           title="Why that rating"
           note="the reviewer's score"
-          body={suggestion.reviewer_explanation}
+          plain={suggestion.reviewer_explanation}
+          technical={suggestion.reviewer_technical}
         />
-        <Explanation
+        <FlipExplanation
           title="How much to trust it"
           note="honest limitations"
-          body={suggestion.trust_summary}
+          plain={suggestion.trust_summary}
+          technical={suggestion.trust_technical}
         />
       </div>
 
@@ -279,26 +287,131 @@ export function SuggestionPanel({ suggestion }: { suggestion: Suggestion }) {
   )
 }
 
-function Explanation({
+/**
+ * An explanation card that flips between two readings of the same finding.
+ *
+ * Front: plain language, for someone who has never heard of RSI.
+ * Back:  the same finding named precisely, for someone who trades.
+ *
+ * They are two REGISTERS, never two conclusions. If the technical side
+ * says the evidence is thin, the plain side says so too — the vocabulary
+ * changes, the finding does not.
+ *
+ * Implemented with a real 3D flip because the gesture communicates
+ * "same card, other side" in a way a tab or a toggle does not.
+ */
+function FlipExplanation({
+  title,
+  note,
+  plain,
+  technical,
+}: {
+  title: string
+  note: string
+  plain: string
+  technical?: string
+}) {
+  const [flipped, setFlipped] = useState(false)
+  const hasTechnical = Boolean(technical?.trim())
+
+  return (
+    <div className="[perspective:1200px]">
+      <div
+        className="relative transition-transform duration-500 [transform-style:preserve-3d]"
+        style={{
+          transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
+          minHeight: '190px',
+        }}
+      >
+        {/* front — plain */}
+        <Face
+          hidden={flipped}
+          title={title}
+          note={note}
+          body={plain}
+          badge="In plain words"
+          badgeClass="bg-emerald-500/10 text-emerald-400"
+          action={hasTechnical ? 'Show the technical version →' : undefined}
+          onFlip={() => setFlipped(true)}
+        />
+
+        {/* back — technical */}
+        <Face
+          back
+          hidden={!flipped}
+          title={title}
+          note="for a professional reader"
+          body={technical ?? ''}
+          badge="Technical"
+          badgeClass="bg-blue-500/10 text-blue-400"
+          action="← Back to plain words"
+          onFlip={() => setFlipped(false)}
+          mono
+        />
+      </div>
+    </div>
+  )
+}
+
+function Face({
   title,
   note,
   body,
+  badge,
+  badgeClass,
+  action,
+  onFlip,
+  back,
+  hidden,
+  mono,
 }: {
   title: string
   note: string
   body: string
+  badge: string
+  badgeClass: string
+  action?: string
+  onFlip: () => void
+  back?: boolean
+  hidden: boolean
+  mono?: boolean
 }) {
   return (
-    <div className="glass p-4">
-      <div className="mb-2 flex items-baseline justify-between gap-2">
+    <div
+      className={`glass flex flex-col p-4 [backface-visibility:hidden] ${back ? 'absolute inset-0' : ''}`}
+      style={{ transform: back ? 'rotateY(180deg)' : undefined }}
+      // Keep the hidden face out of the tab order and off the screen
+      // reader, or every card would be announced twice.
+      aria-hidden={hidden}
+      {...(hidden ? { inert: '' } : {})}
+    >
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-coal-400">
           {title}
         </h3>
-        <span className="text-[10px] text-coal-600">{note}</span>
+        <span className={`rounded px-1.5 py-0.5 text-[9px] font-medium ${badgeClass}`}>
+          {badge}
+        </span>
       </div>
-      <p className="text-[11px] leading-relaxed text-coal-300">
+
+      <p
+        className={`flex-1 leading-relaxed text-coal-300 ${mono ? 'font-mono text-[10px]' : 'text-[12px]'}`}
+      >
         {body || <span className="text-coal-600">Not available.</span>}
       </p>
+
+      <div className="mt-3 flex items-center justify-between gap-2 border-t hairline pt-2">
+        <span className="text-[10px] text-coal-600">{note}</span>
+        {action && (
+          <button
+            type="button"
+            onClick={onFlip}
+            className="shrink-0 rounded-lg px-2 py-1 text-[10px] font-medium text-fire-400 transition-colors hover:bg-fire-500/10"
+          >
+            {action}
+          </button>
+        )}
+      </div>
     </div>
   )
 }
