@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { Header } from './components/Header'
 import { CHAIN_LIST } from './config/chains'
 import { FireAiPage } from './features/ai/FireAiPage'
@@ -70,22 +71,38 @@ export default function App() {
       <WalletAlerts />
 
       <main className="relative mx-auto w-full max-w-7xl flex-1 px-4 py-10 sm:px-6 sm:py-12">
+        {/* One boundary per page, keyed on the tab so switching away from a
+            broken page clears the error rather than stranding the user. */}
         {tab === 'dashboard' && (
-          <>
+          <ErrorBoundary section="the dashboard" resetKey={tab}>
             <Hero />
 
             <div className="mt-10 sm:mt-12">
-              <BalanceCard />
+              <ErrorBoundary section="your balance">
+                <BalanceCard />
+              </ErrorBoundary>
             </div>
 
-            <HoldingsPanel />
-            <MarketTable />
+            <ErrorBoundary section="your holdings">
+              <HoldingsPanel />
+            </ErrorBoundary>
+            <ErrorBoundary section="the market table">
+              <MarketTable />
+            </ErrorBoundary>
             <ChainStrip />
-          </>
+          </ErrorBoundary>
         )}
 
-        {tab === 'fire-ai' && <FireAiPage />}
-        {tab === 'history' && <HistoryPage />}
+        {tab === 'fire-ai' && (
+          <ErrorBoundary section="Fire AI" resetKey={tab}>
+            <FireAiPage />
+          </ErrorBoundary>
+        )}
+        {tab === 'history' && (
+          <ErrorBoundary section="history" resetKey={tab}>
+            <HistoryPage />
+          </ErrorBoundary>
+        )}
       </main>
 
       <Footer />

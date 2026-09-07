@@ -26,7 +26,7 @@ echo.
 REM ---------------------------------------------------------------------
 REM  STEP 1  Check Python
 REM ---------------------------------------------------------------------
-echo   [1/6] Checking Python...
+echo   [1/7] Checking Python...
 where python >nul 2>&1
 if errorlevel 1 (
     color 0C
@@ -47,7 +47,7 @@ echo         Python !PYVER! found.
 REM ---------------------------------------------------------------------
 REM  STEP 2  Check Node.js
 REM ---------------------------------------------------------------------
-echo   [2/6] Checking Node.js...
+echo   [2/7] Checking Node.js...
 where node >nul 2>&1
 if errorlevel 1 (
     color 0C
@@ -66,7 +66,7 @@ echo         Node !NODEVER! found.
 REM ---------------------------------------------------------------------
 REM  STEP 3  Backend setup (only does work the first time)
 REM ---------------------------------------------------------------------
-echo   [3/6] Preparing backend...
+echo   [3/7] Preparing backend...
 
 if not exist "backend\.venv\Scripts\python.exe" (
     echo         First run - creating Python environment. This takes a minute...
@@ -103,7 +103,7 @@ if not exist "backend\.env" (
 REM ---------------------------------------------------------------------
 REM  STEP 4  Frontend setup (only does work the first time)
 REM ---------------------------------------------------------------------
-echo   [4/6] Preparing frontend...
+echo   [4/7] Preparing frontend...
 
 if not exist "frontend\node_modules" (
     echo         First run - installing frontend packages. This takes a few minutes...
@@ -130,15 +130,65 @@ if not exist "frontend\.env" (
 )
 
 REM ---------------------------------------------------------------------
-REM  STEP 5  Free the ports if something is already running on them
+REM  STEP 5  AI providers
 REM ---------------------------------------------------------------------
-echo   [5/6] Checking ports 8000 and 5173...
+REM  The app has automatic failover between an online model and a local
+REM  one. That only helps if at least one is actually reachable -- and
+REM  silently starting with neither means the first analysis fails with a
+REM  confusing error instead of a clear one here.
+echo   [5/7] Checking AI providers...
+
+set "AI_ONLINE=no"
+set "AI_LOCAL=no"
+
+findstr /b /c:"GROQ_API_KEY=gsk" "backend\.env" >nul 2>&1 && set "AI_ONLINE=yes"
+
+REM Ollama answers /api/tags when it is running.
+curl -s -m 3 -o nul http://localhost:11434/api/tags >nul 2>&1 && set "AI_LOCAL=yes"
+
+if "!AI_LOCAL!"=="no" (
+    where ollama >nul 2>&1
+    if not errorlevel 1 (
+        echo         Ollama is installed but not running - starting it...
+        start "Ollama" /min ollama serve
+        REM Give it a moment, then look again.
+        ping -n 4 127.0.0.1 >nul
+        curl -s -m 3 -o nul http://localhost:11434/api/tags >nul 2>&1 && set "AI_LOCAL=yes"
+    )
+)
+
+if "!AI_ONLINE!"=="yes" (
+    if "!AI_LOCAL!"=="yes" (
+        echo         Online + local available - automatic failover is active.
+    ) else (
+        echo         Online only. No local model, so a rate limit cannot be absorbed.
+        echo         Install Ollama and run: ollama pull llama3.1:8b
+    )
+) else (
+    if "!AI_LOCAL!"=="yes" (
+        echo         Local only. Analyses will work but take a few minutes each.
+        echo         Add GROQ_API_KEY to backend\.env for ~8 second analyses.
+    ) else (
+        color 0E
+        echo.
+        echo   [!] NO AI PROVIDER AVAILABLE. The wallet, prices and charts will
+        echo       work, but Fire AI analyses will fail. Fix either:
+        echo         - add GROQ_API_KEY to backend\.env   ^(free: console.groq.com^)
+        echo         - or install Ollama and run: ollama pull llama3.1:8b
+        echo.
+    )
+)
+
+REM ---------------------------------------------------------------------
+REM  STEP 6  Free the ports if something is already running on them
+REM ---------------------------------------------------------------------
+echo   [6/7] Checking ports 8000 and 5173...
 call "%~dp0scripts\_stop_ports.bat" quiet
 
 REM ---------------------------------------------------------------------
-REM  STEP 6  Launch
+REM  STEP 7  Launch
 REM ---------------------------------------------------------------------
-echo   [6/6] Starting servers...
+echo   [7/7] Starting servers...
 start "Fire DEX - Backend" "%~dp0scripts\_backend.bat"
 start "Fire DEX - Frontend" "%~dp0scripts\_frontend.bat"
 

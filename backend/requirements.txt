@@ -15,6 +15,18 @@ uvicorn[standard]>=0.32.0
 pydantic>=2.9.0
 pydantic-settings>=2.6.0
 
+# --- Database ------------------------------------------------------
+# Alembic versions the schema, so a change never means deleting the
+# database and losing recorded analyses.
+sqlalchemy>=2.0.0
+aiosqlite>=0.20.0
+alembic>=1.14.0
+
+# --- Blockchain ----------------------------------------------------
+# EIP-55 address checksums.
+eth-utils>=5.0.0
+eth-hash[pycryptodome]>=0.7.0
+
 # --- HTTP client ---------------------------------------------------
 # Async client used by every external data provider (market, chain, LLM).
 httpx>=0.27.0

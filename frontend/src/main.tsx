@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import App from './App'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { installMockWallet } from './features/wallet/devMockWallet'
 import { WalletProvider } from './features/wallet/WalletContext'
 import './styles/globals.css'
@@ -18,8 +19,12 @@ if (!container) {
 
 createRoot(container).render(
   <StrictMode>
-    <WalletProvider>
-      <App />
-    </WalletProvider>
+    {/* Outermost net. If the wallet provider itself throws, the user still
+        sees a readable message instead of a blank page. */}
+    <ErrorBoundary>
+      <WalletProvider>
+        <App />
+      </WalletProvider>
+    </ErrorBoundary>
   </StrictMode>,
 )

@@ -5,6 +5,7 @@ everything goes through SQLAlchemy, moving to PostgreSQL later is a change
 to one connection string.
 """
 
+import asyncio
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
@@ -53,15 +54,45 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
     return _session_factory
 
 
-async def init_database() -> None:
-    """Create tables if they do not exist.
+def _run_migrations_sync() -> None:
+    """Bring the database up to the newest migration.
 
-    Adequate for the prototype. Alembic migrations arrive with the first
-    schema change that has to preserve existing data.
+    Run in a worker thread because Alembic's API is synchronous.
     """
-    engine = get_engine()
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
+    from alembic import command
+    from alembic.config import Config
+
+    backend_dir = Path(__file__).resolve().parents[2]
+    config = Config(str(backend_dir / "alembic.ini"))
+    config.set_main_option("script_location", str(backend_dir / "migrations"))
+    command.upgrade(config, "head")
+
+
+async def init_database() -> None:
+    """Apply any outstanding migrations at startup.
+
+    Migrations rather than `create_all`. Adding the signal and groundedness
+    columns previously meant deleting the database, which would destroy
+    recorded analyses -- and those analyses are the archive the 8th-semester
+    work depends on. Versioned migrations mean a schema change never costs
+    data again.
+
+    Running them at startup keeps the promise that START.bat is the only
+    command anyone needs.
+    """
+    # Make sure the directory exists before Alembic tries to open the file.
+    get_engine()
+
+    try:
+        await asyncio.to_thread(_run_migrations_sync)
+        log.info("database_migrated")
+    except Exception as exc:  # noqa: BLE001
+        # A failed migration must be loud. Falling back to create_all would
+        # silently produce a schema that does not match the migration
+        # history, which is far worse than refusing to start.
+        log.error("database_migration_failed", error=str(exc))
+        raise
+
     log.info("database_ready")
 
 
