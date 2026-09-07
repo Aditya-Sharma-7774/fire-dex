@@ -36,6 +36,10 @@ data/
 # ---------------------------------------------------------------
 node_modules/
 dist/
+# Emitted by `tsc -b` during the production build; not source.
+vite.config.js
+vite.config.d.ts
+*.tsbuildinfo
 dist-ssr/
 .vite/
 *.local
