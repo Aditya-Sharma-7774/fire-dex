@@ -164,6 +164,27 @@ export interface VerificationResponse {
   message: string
 }
 
+export interface CandleSeriesResponse {
+  symbol: string
+  interval: string
+  times: string[]
+  open: number[]
+  high: number[]
+  low: number[]
+  close: number[]
+  volume: number[]
+  /** Nulls until the indicator's warm-up period has passed. */
+  sma_20: (number | null)[]
+  sma_50: (number | null)[]
+  ema_12: (number | null)[]
+  rsi_14: (number | null)[]
+  macd_line: (number | null)[]
+  macd_signal: (number | null)[]
+  macd_histogram: (number | null)[]
+  bollinger_upper: (number | null)[]
+  bollinger_lower: (number | null)[]
+}
+
 /** Shape of the backend's error responses. */
 interface ApiErrorBody {
   error: string
@@ -208,12 +229,47 @@ function dedupe<T>(key: string, run: () => Promise<T>): Promise<T> {
   return promise
 }
 
+/**
+ * Small cache for responses that cannot change.
+ *
+ * A stored analysis is immutable by construction — it is hashed, and any
+ * change to it is a detected integrity failure. So re-fetching one is pure
+ * waste. Measured: expanding the same history row twice cost 3 network
+ * calls before this.
+ *
+ * Deliberately NOT used for prices, balances or chain state. Those change
+ * constantly, and serving them from a cache would be exactly the stale-data
+ * dishonesty this project exists to avoid. Only paths matching an
+ * immutable record are eligible.
+ */
+const immutableCache = new Map<string, unknown>()
+
+/** A completed analysis or its verification — neither can change. */
+function isImmutable(path: string): boolean {
+  return /^\/api\/v1\/analysis\/FIRE-\d{4}-\d{6}$/.test(path)
+}
+
+export function clearImmutableCache(): void {
+  immutableCache.clear()
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // Only GETs are safe to deduplicate; a repeated write must actually repeat.
-  if (!init?.method || init.method === 'GET') {
-    return dedupe(path, () => performRequest<T>(path, init))
+  if (init?.method && init.method !== 'GET') {
+    return performRequest<T>(path, init)
   }
-  return performRequest<T>(path, init)
+
+  if (isImmutable(path) && immutableCache.has(path)) {
+    return immutableCache.get(path) as T
+  }
+
+  const result = await dedupe(path, () => performRequest<T>(path, init))
+
+  if (isImmutable(path)) {
+    immutableCache.set(path, result)
+  }
+
+  return result
 }
 
 async function performRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -271,6 +327,9 @@ export const api = {
 
   portfolio: (chain: string, address: string) =>
     request<PortfolioResponse>(`/api/v1/portfolio/${chain}/${address}`),
+
+  candles: (symbol: string, interval = '1h') =>
+    request<CandleSeriesResponse>(`/api/v1/candles/${symbol}?interval=${interval}`),
 
   aiStatus: () => request<AiStatusResponse>('/api/v1/ai/status'),
 

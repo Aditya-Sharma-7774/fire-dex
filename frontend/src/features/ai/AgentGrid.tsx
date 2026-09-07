@@ -56,8 +56,35 @@ export function AgentGrid({
   const specialists = agents.filter((a) => a.name !== 'reviewer' && a.name !== 'fire_auditor')
   const reviewer = agents.find((a) => a.name === 'reviewer')
 
+  // Announce progress to screen readers.
+  //
+  // The grid conveys everything visually — colour, position, a pulsing
+  // dot — and none of that reaches someone using a screen reader. One
+  // polite live region turns the pipeline into something followable
+  // without sight. `polite` rather than `assertive` because these are
+  // status updates, not warnings, and should not interrupt.
+  const announcement = (() => {
+    const running = specialists.filter((a) => a.status === 'running').map((a) => prettyName(a.name))
+    const done = specialists.filter((a) => a.status === 'completed').length
+    const failed = specialists.filter((a) => a.status === 'failed').length
+
+    if (auditDone) return 'Analysis complete. Result recorded and hashed.'
+    if (reviewerDone) return 'Reviewer finished. Recording the result.'
+    if (running.length > 0) {
+      return `${running.join(' and ')} running. ${done} of ${specialists.length} agents finished.`
+    }
+    if (done + failed === specialists.length && specialists.length > 0) {
+      return `All agents finished: ${done} completed${failed ? `, ${failed} failed` : ''}. Reviewing.`
+    }
+    return 'Preparing agents.'
+  })()
+
   return (
     <div className="space-y-3">
+      <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {announcement}
+      </p>
+
       <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
         {specialists.map((agent) => (
           <AgentCard key={agent.name} agent={agent} />

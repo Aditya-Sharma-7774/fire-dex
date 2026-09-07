@@ -131,6 +131,21 @@
 }
 
 @layer utilities {
+  /* Visible to screen readers only. Used for live-region announcements
+     that would be redundant on screen but are the only signal available
+     to someone not looking at it. */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+
   /* Staggered entrance: each card starts a beat after the last, so a
      section assembles rather than appearing all at once. */
   .stagger > * {

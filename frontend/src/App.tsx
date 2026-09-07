@@ -6,6 +6,7 @@ import { CHAIN_LIST } from './config/chains'
 import { FireAiPage } from './features/ai/FireAiPage'
 import { HistoryPage } from './features/history/HistoryPage'
 import { MarketTable } from './features/market/MarketTable'
+import { PriceChart } from './features/market/PriceChart'
 import { BalanceCard } from './features/portfolio/BalanceCard'
 import { HoldingsPanel } from './features/portfolio/HoldingsPanel'
 import { isMockWalletRequested } from './features/wallet/devMockWallet'
@@ -85,6 +86,9 @@ export default function App() {
 
             <ErrorBoundary section="your holdings">
               <HoldingsPanel />
+            </ErrorBoundary>
+            <ErrorBoundary section="the price chart">
+              <PriceChart symbol="ETH" />
             </ErrorBoundary>
             <ErrorBoundary section="the market table">
               <MarketTable />
