@@ -51,7 +51,16 @@ export interface AnalysisState {
   evidenceCount: number | null
   evidenceFailures: string[]
   dataStale: boolean
-  model: { model: string; provider: string; mode: string } | null
+  model: { model: string; provider: string; mode: string; fallbackReady?: boolean } | null
+  /** Every automatic failover, so a switch is never invisible. */
+  providerSwitches: {
+    at: string
+    from_provider: string
+    from_model: string
+    to_provider: string
+    to_model: string
+    reason: string
+  }[]
   agents: AgentProgress[]
   reanalysisReason: string | null
   summary: string | null
@@ -75,6 +84,7 @@ const INITIAL: AnalysisState = {
   evidenceFailures: [],
   dataStale: false,
   model: null,
+  providerSwitches: [],
   agents: [],
   reanalysisReason: null,
   summary: null,
@@ -196,6 +206,7 @@ function applyEvent(event: Record<string, unknown>, setState: Setter) {
           model: event.model as string,
           provider: event.provider as string,
           mode: event.mode as string,
+          fallbackReady: Boolean(event.fallback_ready),
         },
       }))
       break
@@ -225,6 +236,24 @@ function applyEvent(event: Record<string, unknown>, setState: Setter) {
           tokens: event.tokens as number | undefined,
           errors: (event.errors as string[]) ?? undefined,
         }),
+      }))
+      break
+
+    case 'provider_switch':
+      setState((prev) => ({
+        ...prev,
+        providerSwitches: [
+          ...prev.providerSwitches,
+          event as unknown as AnalysisState['providerSwitches'][number],
+        ],
+        // The model in use has genuinely changed, so the header must
+        // follow it rather than keep showing the one we started with.
+        model: {
+          model: event.to_model as string,
+          provider: event.to_provider as string,
+          mode: (event.to_provider as string) === 'ollama' ? 'local' : 'online',
+          fallbackReady: false,
+        },
       }))
       break
 

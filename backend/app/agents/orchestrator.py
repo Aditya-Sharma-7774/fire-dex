@@ -70,6 +70,7 @@ class AnalysisOutcome:
         grounded: GroundednessReport | None = None,
         suggestion: SuggestionResult | None = None,
         signal: SignalResult | None = None,
+        provider_switches: list[dict] | None = None,
     ) -> None:
         self.bundle = bundle
         self.results = results
@@ -81,6 +82,7 @@ class AnalysisOutcome:
         self.grounded = grounded
         self.suggestion = suggestion
         self.signal = signal
+        self.provider_switches = provider_switches or []
 
 
 def plan_agents(bundle: EvidenceBundle) -> list[type]:
@@ -145,6 +147,7 @@ async def run_analysis(
         attempts += 1
         results, validations = await _run_agents(agent_classes, bundle, llm, emit)
 
+        await _emit_switches(llm, emit)
         await emit({"type": "agents_complete", "completed": len(results)})
         await emit({"type": "agent_status", "agent": "reviewer", "status": "running"})
 
@@ -168,6 +171,8 @@ async def run_analysis(
             continue
 
         break
+
+    await _emit_switches(llm, emit)
 
     # --- groundedness and signal: both computed, no model involved ---
     grounded = assess_groundedness(bundle, results, validations)
@@ -202,6 +207,7 @@ async def run_analysis(
     duration_ms = int((ended - started).total_seconds() * 1000)
     summary = build_summary(results, reviewer)
 
+    await _emit_switches(llm, emit)
     await emit({"type": "agent_status", "agent": "fire_auditor", "status": "running"})
 
     return AnalysisOutcome(
@@ -215,7 +221,25 @@ async def run_analysis(
         grounded=grounded,
         suggestion=suggestion,
         signal=signal,
+        provider_switches=[s.as_dict() for s in getattr(llm, "switches", [])],
     )
+
+
+async def _emit_switches(llm: LlmProvider, emit: ProgressCallback) -> None:
+    """Report any provider failover that has happened since the last check.
+
+    A silent switch would make the stored `model` field a lie, and the whole
+    argument of this project is that the record can be trusted. So every
+    failover is surfaced to the interface as it happens.
+    """
+    switches = getattr(llm, "switches", None)
+    if not switches:
+        return
+
+    already = getattr(llm, "_reported_switches", 0)
+    for record in switches[already:]:
+        await emit({"type": "provider_switch", **record.as_dict()})
+    setattr(llm, "_reported_switches", len(switches))
 
 
 async def _run_agents(

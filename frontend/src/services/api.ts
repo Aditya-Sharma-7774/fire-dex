@@ -113,6 +113,8 @@ export interface AiStatusResponse {
   local: AiProviderStatus
   online: AiProviderStatus
   any_available: boolean
+  /** True when a failure on one provider can be absorbed by the other. */
+  fallback_ready?: boolean
 }
 
 export interface AnalysisHistoryItem {

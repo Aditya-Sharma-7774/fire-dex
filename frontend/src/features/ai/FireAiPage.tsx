@@ -141,8 +141,16 @@ export function FireAiPage() {
           </div>
 
           {ai && (
-            <span className="ml-auto font-mono text-[10px] text-coal-600">
+            <span className="ml-auto flex items-center gap-2 font-mono text-[10px] text-coal-600">
               {(prefer ?? ai.preference) === 'local' ? ai.local.model : ai.online.model}
+              {ai.local.available && ai.online.available && (
+                <span
+                  className="rounded bg-blue-500/10 px-1.5 py-0.5 text-blue-400"
+                  title="If one provider fails or hits its rate limit, the other takes over automatically"
+                >
+                  ⇄ failover ready
+                </span>
+              )}
             </span>
           )}
         </div>
@@ -152,6 +160,32 @@ export function FireAiPage() {
         <div className="animate-fade-up rounded-2xl border border-red-500/30 bg-red-500/[0.07] p-4">
           <div className="text-sm font-semibold text-red-300">Analysis failed</div>
           <p className="mt-1 text-xs leading-relaxed text-red-200/70">{analysis.error}</p>
+        </div>
+      )}
+
+      {analysis.providerSwitches.length > 0 && (
+        <div className="animate-fade-up rounded-2xl border border-blue-500/30 bg-blue-500/[0.07] p-4">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 text-lg leading-none" aria-hidden="true">
+              ⇄
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold text-blue-300">
+                Switched model automatically
+              </div>
+              {analysis.providerSwitches.map((s, i) => (
+                <p key={i} className="mt-1 text-xs leading-relaxed text-blue-200/70">
+                  <span className="font-mono">{s.from_model}</span> ({s.from_provider}){' '}
+                  {s.reason} — continued on <span className="font-mono">{s.to_model}</span> (
+                  {s.to_provider}).
+                </p>
+              ))}
+              <p className="mt-1.5 text-[10px] text-blue-200/50">
+                Agents that ran before the switch used the original model. Each agent's own
+                model is recorded, so the audit trail stays accurate.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 

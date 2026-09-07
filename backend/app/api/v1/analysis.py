@@ -220,7 +220,15 @@ async def stream_analysis(
 
             llm = await llm_service.get_provider(request.prefer)
             await queue.put(
-                {"type": "model", "model": llm.model, "provider": llm.name, "mode": llm.mode}
+                {
+                    "type": "model",
+                    "model": llm.model,
+                    "provider": llm.name,
+                    "mode": llm.mode,
+                    # True when a second provider is standing by, so the UI
+                    # can say whether a failure would be absorbed.
+                    "fallback_ready": hasattr(llm, "switches"),
+                }
             )
 
             outcome = await run_analysis(
@@ -273,6 +281,7 @@ async def stream_analysis(
                         outcome.suggestion.model_dump(mode="json") if outcome.suggestion else None
                     ),
                     "conflicts": conflicts,
+                    "provider_switches": outcome.provider_switches,
                     "attempts": outcome.attempts,
                     "duration_ms": outcome.duration_ms,
                     "hash": analysis.result_hash,
