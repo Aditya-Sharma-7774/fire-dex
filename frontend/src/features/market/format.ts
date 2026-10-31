@@ -70,7 +70,12 @@ export function formatAmount(formatted: string): string {
   if (value === 0) return '0'
   if (value >= 1_000_000) return value.toLocaleString('en-US', { maximumFractionDigits: 0 })
   if (value >= 1) return value.toLocaleString('en-US', { maximumFractionDigits: 4 })
-  if (value >= 0.0001) return value.toFixed(6)
+  // Eight places is one satoshi, Bitcoin's smallest unit, so a small BTC
+  // balance shows exactly rather than cut to six places or written as
+  // "1.23e-5", which means nothing to most people.
+  if (value >= 0.00000001) return value.toLocaleString('en-US', { maximumFractionDigits: 8 })
+  // Only true dust below one satoshi falls back to scientific notation --
+  // still never displayed as zero.
   return value.toExponential(2)
 }
 

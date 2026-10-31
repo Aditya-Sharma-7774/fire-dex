@@ -1,6 +1,7 @@
 import { AnimatedNumber } from '../../components/ui/AnimatedNumber'
 import { TokenIcon } from '../../components/ui/TokenIcon'
-import type { TokenBalanceResponse } from '../../services/api'
+import type { ChainConfig } from '../../config/chains'
+import type { PortfolioResponse, TokenBalanceResponse } from '../../services/api'
 import {
   changeColour,
   formatAmount,
@@ -11,15 +12,7 @@ import {
 import { usePortfolio } from '../market/useMarket'
 import { useWallet } from '../wallet/WalletContext'
 
-/**
- * The user's actual holdings, valued in USD.
- *
- * The honesty rules for this panel:
- *   - a holding we could not price shows "—", never $0
- *   - a balance we could not read shows "unavailable", never 0
- *   - a total is null, not zero, when nothing could be priced
- *   - stale prices are labelled
- */
+/** The connected MetaMask wallet's holdings, on whichever EVM chain it is on. */
 export function HoldingsPanel() {
   const { status, address, chain, isUnsupportedNetwork } = useWallet()
 
@@ -27,8 +20,6 @@ export function HoldingsPanel() {
   const portfolio = usePortfolio(readable ? chain.id : null, readable ? address : null)
 
   if (!readable) return null
-
-  const data = portfolio.data
 
   return (
     <section className="mt-14">
@@ -40,78 +31,105 @@ export function HoldingsPanel() {
           {chain.isTestnet ? 'Testnet assets have no real value' : 'Valued at live market prices'}
         </span>
       </div>
+      <PortfolioCard chain={chain} portfolio={portfolio} />
+    </section>
+  )
+}
 
-      {/* ---- total value ---- */}
-      <div className="glass glass-hover p-6">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-coal-400">
-              Total portfolio value
-            </div>
-            <div className="mt-2 flex items-baseline gap-2">
-              {portfolio.loading && !data ? (
-                <div className="h-10 w-48 animate-shimmer rounded-lg" />
-              ) : portfolio.error ? (
-                <span className="text-2xl font-bold text-red-400">Unavailable</span>
-              ) : data?.total_value_usd != null ? (
-                <>
-                  <span className="text-3xl font-extrabold tracking-tight text-coal-50 sm:text-4xl">
-                    <AnimatedNumber
-                      value={data.total_value_usd.toFixed(2)}
-                      decimals={2}
-                      format={formatUsd}
-                      className="tabular-nums"
-                    />
-                  </span>
-                  <span className="text-sm font-medium text-coal-500">USD</span>
-                </>
-              ) : (
-                <span className="text-2xl font-bold text-coal-400">—</span>
-              )}
-            </div>
+interface PortfolioCardProps {
+  chain: ChainConfig
+  portfolio: { data: PortfolioResponse | null; loading: boolean; error: string | null }
+}
 
-            {data && (
-              <p className="mt-1.5 text-[11px] text-coal-500">
-                {data.priced_count} priced
-                {data.unpriced_count > 0 && ` · ${data.unpriced_count} unpriced`}
-                {data.contains_stale_prices && (
-                  <span className="text-amber-500"> · includes stale prices</span>
-                )}
-              </p>
-            )}
+/**
+ * Holdings for one address on one chain, valued in USD. Used for every chain,
+ * so one set of honesty rules applies everywhere:
+ *
+ *   - a holding we could not price shows "—", never $0
+ *   - a balance we could not read shows "unavailable", never 0
+ *   - a total is null, not zero, when nothing could be priced
+ *   - stale prices are labelled
+ */
+export function PortfolioCard({ chain, portfolio }: PortfolioCardProps) {
+  const data = portfolio.data
 
-            {portfolio.error && (
-              <p className="mt-1.5 max-w-md text-[11px] text-red-300/70">{portfolio.error}</p>
+  return (
+    <div className="glass glass-hover p-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-coal-400">
+            Total value on {chain.name}
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            {portfolio.loading && !data ? (
+              <div className="h-10 w-48 animate-shimmer rounded-lg" />
+            ) : portfolio.error ? (
+              <span className="text-2xl font-bold text-red-400">Unavailable</span>
+            ) : data?.total_value_usd != null ? (
+              <>
+                <span className="text-3xl font-extrabold tracking-tight text-coal-50 sm:text-4xl">
+                  <AnimatedNumber
+                    value={data.total_value_usd.toFixed(2)}
+                    decimals={2}
+                    format={formatUsd}
+                    className="tabular-nums"
+                  />
+                </span>
+                <span className="text-sm font-medium text-coal-500">USD</span>
+              </>
+            ) : (
+              <span className="text-2xl font-bold text-coal-400">—</span>
             )}
           </div>
 
-          {chain.isTestnet && (
-            <div className="rounded-xl border border-amber-500/25 bg-amber-500/[0.07] px-3 py-2">
-              <p className="text-[11px] leading-relaxed text-amber-300">
-                Sepolia is a test network.
-                <br />
-                These assets are worthless.
-              </p>
-            </div>
+          {data && (
+            <p className="mt-1.5 text-[11px] text-coal-500">
+              {data.priced_count} priced
+              {data.unpriced_count > 0 && ` · ${data.unpriced_count} unpriced`}
+              {data.contains_stale_prices && (
+                <span className="text-amber-500"> · includes stale prices</span>
+              )}
+            </p>
+          )}
+
+          {portfolio.error && (
+            <p className="mt-1.5 max-w-md text-[11px] text-red-300/70">{portfolio.error}</p>
           )}
         </div>
 
-        {/* ---- holdings list ---- */}
-        {data && data.balances.length > 0 && (
-          <div className="mt-6 space-y-1 border-t hairline pt-4">
-            {data.balances.map((balance) => (
-              <HoldingRow key={`${balance.chain}-${balance.symbol}`} balance={balance} />
-            ))}
+        {chain.isTestnet && (
+          <div className="rounded-xl border border-amber-500/25 bg-amber-500/[0.07] px-3 py-2">
+            <p className="text-[11px] leading-relaxed text-amber-300">
+              {chain.name} is a test network.
+              <br />
+              These assets are worthless.
+            </p>
           </div>
         )}
-
-        {data && data.balances.length === 0 && (
-          <p className="mt-6 border-t hairline pt-4 text-sm text-coal-500">
-            No tracked tokens held by this address on {chain.name}.
-          </p>
-        )}
       </div>
-    </section>
+
+      {data && data.balances.length > 0 && (
+        <div className="mt-6 space-y-1 border-t hairline pt-4">
+          {data.balances.map((balance) => (
+            <HoldingRow key={`${balance.chain}-${balance.symbol}`} balance={balance} />
+          ))}
+        </div>
+      )}
+
+      {data && data.balances.length === 0 && (
+        <p className="mt-6 border-t hairline pt-4 text-sm text-coal-500">
+          No tracked tokens held by this address on {chain.name}.
+        </p>
+      )}
+
+      {data && data.untracked_tokens > 0 && (
+        <p className="mt-3 text-[11px] leading-relaxed text-coal-500">
+          This address also holds {data.untracked_tokens} other{' '}
+          {data.untracked_tokens === 1 ? 'token' : 'tokens'} outside Fire DEX's verified list. They
+          are not priced or counted in the total — on Solana most unrequested tokens are spam.
+        </p>
+      )}
+    </div>
   )
 }
 

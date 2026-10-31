@@ -137,6 +137,26 @@ export async function switchChain(
   })
 }
 
+/** What EIP-3085 needs to add a network the wallet does not know. */
+export interface AddChainParams {
+  chainId: string
+  chainName: string
+  nativeCurrency: { name: string; symbol: string; decimals: number }
+  rpcUrls: string[]
+  blockExplorerUrls: string[]
+}
+
+/**
+ * Ask the wallet to add a network, which also switches to it.
+ *
+ * The RPC URL handed over here is the one the user's wallet will send their
+ * own transactions through, so it must be the chain's official endpoint.
+ * A dishonest RPC can misreport what a transaction does.
+ */
+export async function addChain(provider: Eip1193Provider, params: AddChainParams): Promise<void> {
+  await provider.request({ method: 'wallet_addEthereumChain', params: [params] })
+}
+
 /** Turn any wallet error into a message worth showing a human. */
 export function describeWalletError(error: unknown): string {
   const code = getErrorCode(error)

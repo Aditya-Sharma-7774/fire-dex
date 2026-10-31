@@ -143,4 +143,18 @@ describe('formatAmount', () => {
   it('renders a genuine zero as 0', () => {
     expect(formatAmount('0')).toBe('0')
   })
+
+  it('shows every satoshi of a small Bitcoin balance', () => {
+    expect(formatAmount('0.00012345')).toBe('0.00012345')
+    expect(formatAmount('0.00001234')).toBe('0.00001234')
+    expect(formatAmount('0.00000001')).toBe('0.00000001')
+  })
+
+  it('never uses scientific notation for one satoshi or more', () => {
+    expect(formatAmount('0.00001234')).not.toContain('e')
+  })
+
+  it('keeps dust below one satoshi visible rather than showing zero', () => {
+    expect(formatAmount('0.000000000001')).not.toBe('0')
+  })
 })

@@ -2,11 +2,10 @@
  * Typed client for the Fire DEX backend.
  *
  * Every backend call in the app goes through this file. Components never
- * call `fetch` directly -- that keeps error handling, base URLs and (later)
- * auth headers in exactly one place.
+ * call `fetch` directly, which keeps error handling and the base URL in
+ * exactly one place.
  *
- * From a later milestone these types will be generated from the backend's
- * OpenAPI schema instead of hand-written, so the two halves cannot drift.
+ * The types are written by hand to mirror the backend's response models.
  */
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000'
@@ -27,6 +26,8 @@ export interface ChainStatusResponse {
   reachable: boolean
   chain_id: number | null
   block_number: number | null
+  /** Solana only: advances every ~400ms, so it runs ahead of block height. */
+  slot: number | null
   error: string | null
 }
 
@@ -88,6 +89,19 @@ export interface PortfolioResponse {
   unpriced_count: number
   fetched_at: string
   contains_stale_prices: boolean
+  /** Other tokens held but not in the verified registry. Solana only. */
+  untracked_tokens: number
+}
+
+export interface AddressValidation {
+  chain: string
+  /** Canonical form: checksummed for EVM, lowercase for bech32. */
+  address: string
+  valid: boolean
+  /** Solana only. False for a program-derived address no private key can control. */
+  is_wallet?: boolean
+  /** Bitcoin only, e.g. "Taproot (P2TR)". */
+  address_type?: string
 }
 
 export interface TokenConfigResponse {
@@ -327,6 +341,11 @@ export const api = {
 
   portfolio: (chain: string, address: string) =>
     request<PortfolioResponse>(`/api/v1/portfolio/${chain}/${address}`),
+
+  validateAddress: (chain: string, address: string) =>
+    request<AddressValidation>(
+      `/api/v1/chains/${chain}/validate?address=${encodeURIComponent(address)}`,
+    ),
 
   candles: (symbol: string, interval = '1h') =>
     request<CandleSeriesResponse>(`/api/v1/candles/${symbol}?interval=${interval}`),

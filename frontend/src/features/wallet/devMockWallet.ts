@@ -54,6 +54,7 @@ export function installMockWallet(): void {
   const handlers: Record<string, Handler[]> = {}
   let authorised = false
   let chainIdHex = SEPOLIA_HEX
+  const addedChains = new Set<string>()
   let address = MOCK_ADDRESS
 
   const emit = (event: string, payload: unknown) => {
@@ -90,13 +91,23 @@ export function installMockWallet(): void {
           const requested = (params as [{ chainId: string }])[0]?.chainId
           if (!requested) throw { code: -32602, message: 'Missing chainId' }
 
-          // Pretend BNB Smart Chain is not configured, so the 4902
-          // "unrecognised chain" branch can be tested.
-          if (requested === '0x38') {
+          // Behave like a fresh MetaMask that has not had BNB Smart Chain
+          // added, so the 4902 "unrecognised chain" -> add-chain path runs.
+          if (requested === '0x38' && !addedChains.has('0x38')) {
             throw { code: 4902, message: 'Unrecognized chain ID.' }
           }
 
           chainIdHex = requested
+          emit('chainChanged', chainIdHex)
+          return null
+        }
+
+        case 'wallet_addEthereumChain': {
+          const added = (params as [{ chainId: string }])[0]?.chainId
+          if (!added) throw { code: -32602, message: 'Missing chainId' }
+          // MetaMask adds the network and then switches to it.
+          addedChains.add(added)
+          chainIdHex = added
           emit('chainChanged', chainIdHex)
           return null
         }

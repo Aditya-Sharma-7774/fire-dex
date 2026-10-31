@@ -41,8 +41,14 @@ export interface ChainConfig {
   explorerUrl: string
   /** Accent colour used in charts, chips and the chain selector. */
   color: string
-  /** Whether this chain is wired up yet. Drives "coming soon" states. */
+  /** Whether Fire DEX supports this chain. */
   isActive: boolean
+  /**
+   * Official RPC endpoint to give MetaMask when it does not know the chain.
+   * The user's own transactions will go through it, so only the chain's
+   * official endpoint belongs here. Unset for chains MetaMask ships with.
+   */
+  walletRpcUrl?: string
 }
 
 export const CHAINS: Record<string, ChainConfig> = {
@@ -83,7 +89,8 @@ export const CHAINS: Record<string, ChainConfig> = {
     isTestnet: false,
     explorerUrl: 'https://bscscan.com',
     color: '#F0B90B',
-    isActive: false,
+    isActive: true,
+    walletRpcUrl: 'https://bsc-dataseed.bnbchain.org',
   },
   solana: {
     id: 'solana',
@@ -94,9 +101,9 @@ export const CHAINS: Record<string, ChainConfig> = {
     nativeSymbol: 'SOL',
     nativeDecimals: 9,
     isTestnet: false,
-    explorerUrl: 'https://solscan.io',
+    explorerUrl: 'https://explorer.solana.com',
     color: '#14F195',
-    isActive: false,
+    isActive: true,
   },
   bitcoin: {
     id: 'bitcoin',
@@ -109,14 +116,24 @@ export const CHAINS: Record<string, ChainConfig> = {
     isTestnet: false,
     explorerUrl: 'https://mempool.space',
     color: '#F7931A',
-    isActive: false,
+    isActive: true,
   },
 }
 
 export const CHAIN_LIST: ChainConfig[] = Object.values(CHAINS)
 
-/** Chains that are implemented and selectable right now. */
+/** Chains Fire DEX supports. */
 export const ACTIVE_CHAINS: ChainConfig[] = CHAIN_LIST.filter((c) => c.isActive)
+
+/**
+ * Chains MetaMask can switch to. MetaMask is an EVM wallet: offering it
+ * Solana or Bitcoin would ask it to do something it cannot. Those chains
+ * are read by address instead.
+ */
+export const METAMASK_CHAINS: ChainConfig[] = ACTIVE_CHAINS.filter((c) => c.family === 'evm')
+
+/** Chains read by pasting a public address, because MetaMask cannot hold them. */
+export const WATCH_ONLY_CHAINS: ChainConfig[] = ACTIVE_CHAINS.filter((c) => c.family !== 'evm')
 
 export function getChain(id: string): ChainConfig | undefined {
   return CHAINS[id]

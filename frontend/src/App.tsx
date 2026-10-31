@@ -9,15 +9,16 @@ import { MarketTable } from './features/market/MarketTable'
 import { PriceChart } from './features/market/PriceChart'
 import { BalanceCard } from './features/portfolio/BalanceCard'
 import { HoldingsPanel } from './features/portfolio/HoldingsPanel'
+import { WatchAddressPanel } from './features/portfolio/WatchAddressPanel'
 import { isMockWalletRequested } from './features/wallet/devMockWallet'
 import { WalletAlerts } from './features/wallet/WalletAlerts'
 import { useWallet } from './features/wallet/WalletContext'
 import { api, ApiError, type HealthResponse } from './services/api'
 
 /**
- * Milestone 2 dashboard.
+ * The application shell: wallet state, backend reachability and the three tabs.
  *
- * Everything shown is either real or explicitly marked as not built yet.
+ * Everything shown is either real or explicitly marked as unavailable.
  * There are no placeholder balances, no sample prices and no mock charts.
  */
 export type Tab = 'dashboard' | 'fire-ai' | 'history'
@@ -86,6 +87,9 @@ export default function App() {
 
             <ErrorBoundary section="your holdings">
               <HoldingsPanel />
+            </ErrorBoundary>
+            <ErrorBoundary section="address tracking">
+              <WatchAddressPanel />
             </ErrorBoundary>
             <ErrorBoundary section="the price chart">
               <PriceChart symbol="ETH" />
@@ -211,6 +215,23 @@ function ChainStrip() {
         {CHAIN_LIST.map((chain) => {
           const selected = active?.id === chain.id
           const selectable = chain.isActive && status === 'connected'
+
+          // MetaMask cannot switch to Solana or Bitcoin; they are read by
+          // address, so their chip goes to the tracker instead.
+          if (chain.family !== 'evm') {
+            return (
+              <a
+                key={chain.id}
+                href="#track-address"
+                title={`Track a ${chain.name} address`}
+                className="flex items-center gap-1.5 rounded-full border hairline px-2.5 py-1 text-[11px] text-coal-300 transition-all hover:border-fire-500/25 hover:bg-white/[0.04]"
+              >
+                <span className="h-1.5 w-1.5 rounded-full" style={{ background: chain.color }} />
+                {chain.name}
+                <span className="text-coal-600">by address</span>
+              </a>
+            )
+          }
 
           return (
             <button

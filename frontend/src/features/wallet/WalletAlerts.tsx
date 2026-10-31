@@ -1,4 +1,4 @@
-import { ACTIVE_CHAINS } from '../../config/chains'
+import { METAMASK_CHAINS } from '../../config/chains'
 import { useWallet } from './WalletContext'
 
 /**
@@ -31,7 +31,7 @@ export function WalletAlerts() {
                 misleading. Switch to a supported network to continue.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
-                {ACTIVE_CHAINS.map((chain) => (
+                {METAMASK_CHAINS.map((chain) => (
                   <button
                     key={chain.id}
                     type="button"

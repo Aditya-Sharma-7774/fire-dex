@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { TokenIcon } from '../../components/ui/TokenIcon'
+import { ACTIVE_CHAINS } from '../../config/chains'
 import type { PriceResponse, TokenConfigResponse } from '../../services/api'
 import { api } from '../../services/api'
 import { changeColour, formatChange, formatCompact, formatPrice } from './format'
@@ -13,20 +14,25 @@ import { usePriceDirection, usePrices } from './useMarket'
  * change, so movement is visible without watching the numbers. The flash is
  * driven by an actual value comparison -- it is a signal, not decoration.
  */
+// Testnet tokens have no market, so only mainnets get a tab.
+const MARKET_CHAINS = ACTIVE_CHAINS.filter((c) => !c.isTestnet)
+
 export function MarketTable() {
-  const [tokens, setTokens] = useState<TokenConfigResponse[]>([])
+  const [chainId, setChainId] = useState(MARKET_CHAINS[0]?.id ?? 'ethereum')
+  const [tokensByChain, setTokensByChain] = useState<Record<string, TokenConfigResponse[]>>({})
   const { data: prices, error, updatedAt } = usePrices()
 
   useEffect(() => {
     // The token list is configuration, not market data: it changes when we
-    // deploy, not every 20 seconds. One fetch is enough.
+    // deploy, not every 30 seconds. One fetch per chain, kept once loaded.
+    if (tokensByChain[chainId]) return
     api
-      .tokens('ethereum')
-      .then(setTokens)
-      .catch(() => setTokens([]))
-  }, [])
+      .tokens(chainId)
+      .then((tokens) => setTokensByChain((prev) => ({ ...prev, [chainId]: tokens })))
+      .catch(() => setTokensByChain((prev) => ({ ...prev, [chainId]: [] })))
+  }, [chainId, tokensByChain])
 
-  const rows = tokens.filter((t) => t.coingecko_id)
+  const rows = (tokensByChain[chainId] ?? []).filter((t) => t.coingecko_id)
 
   return (
     <section className="mt-14">
@@ -47,6 +53,28 @@ export function MarketTable() {
             </>
           )}
         </div>
+      </div>
+
+      <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label="Market by chain">
+        {MARKET_CHAINS.map((option) => {
+          const selected = option.id === chainId
+          return (
+            <button
+              key={option.id}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => setChainId(option.id)}
+              className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors ${
+                selected
+                  ? 'border-fire-500/40 bg-fire-500/10 text-fire-300'
+                  : 'hairline text-coal-300 hover:bg-white/[0.04]'
+              }`}
+            >
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: option.color }} />
+              {option.name}
+            </button>
+          )
+        })}
       </div>
 
       <div className="glass overflow-hidden">
@@ -72,7 +100,7 @@ export function MarketTable() {
                 ? Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)
                 : rows.map((token) => (
                     <MarketRow
-                      key={token.symbol}
+                      key={`${token.chain}-${token.symbol}`}
                       token={token}
                       price={prices?.[token.coingecko_id ?? ''] ?? null}
                     />

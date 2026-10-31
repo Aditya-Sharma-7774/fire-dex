@@ -32,6 +32,7 @@ import {
 
 import { getChain, getEvmChainByChainId, toHexChainId, type ChainConfig } from '../../config/chains'
 import {
+  addChain,
   describeWalletError,
   getAuthorisedAccounts,
   getChainId,
@@ -221,20 +222,38 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
     setState((prev) => ({ ...prev, error: null }))
 
+    const hexChainId = toHexChainId(target.chainId)
     try {
-      await switchChain(provider, toHexChainId(target.chainId))
+      await switchChain(provider, hexChainId)
       // We do not set state here on purpose -- the wallet fires
       // `chainChanged`, and letting that single path update state means the
       // UI is correct whether the switch happened here or in MetaMask.
     } catch (error) {
-      if (getErrorCode(error) === WalletErrorCode.UNRECOGNIZED_CHAIN) {
-        setState((prev) => ({
-          ...prev,
-          error: `Add ${target.name} to MetaMask first, then try again.`,
-        }))
+      if (getErrorCode(error) !== WalletErrorCode.UNRECOGNIZED_CHAIN) {
+        setState((prev) => ({ ...prev, error: describeWalletError(error) }))
         return
       }
-      setState((prev) => ({ ...prev, error: describeWalletError(error) }))
+      // MetaMask does not know this chain. Offer to add it, which also
+      // switches to it -- rather than sending the user off to do it by hand.
+      if (!target.walletRpcUrl) {
+        setState((prev) => ({ ...prev, error: `Add ${target.name} to MetaMask first, then try again.` }))
+        return
+      }
+      try {
+        await addChain(provider, {
+          chainId: hexChainId,
+          chainName: target.name,
+          nativeCurrency: {
+            name: target.nativeSymbol,
+            symbol: target.nativeSymbol,
+            decimals: target.nativeDecimals,
+          },
+          rpcUrls: [target.walletRpcUrl],
+          blockExplorerUrls: [target.explorerUrl],
+        })
+      } catch (addError) {
+        setState((prev) => ({ ...prev, error: describeWalletError(addError) }))
+      }
     }
   }, [])
 

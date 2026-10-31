@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { CHAIN_LIST } from '../../config/chains'
+import { METAMASK_CHAINS } from '../../config/chains'
 import { useWallet } from './WalletContext'
 
 /**
@@ -80,13 +80,12 @@ export function NetworkSelector() {
             Switch network
           </div>
 
-          {CHAIN_LIST.map((option) => {
+          {METAMASK_CHAINS.map((option) => {
             const selected = chain?.id === option.id
             return (
               <button
                 key={option.id}
                 type="button"
-                disabled={!option.isActive}
                 onClick={() => {
                   void switchToChain(option.id)
                   setOpen(false)
@@ -113,11 +112,6 @@ export function NetworkSelector() {
                 {option.isTestnet && (
                   <span className="shrink-0 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-400">
                     Test
-                  </span>
-                )}
-                {!option.isActive && (
-                  <span className="shrink-0 text-[9px] uppercase tracking-wide text-coal-600">
-                    Soon
                   </span>
                 )}
                 {selected && <span className="shrink-0 text-xs text-fire-400">✓</span>}

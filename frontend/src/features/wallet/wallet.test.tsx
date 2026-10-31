@@ -24,10 +24,15 @@ const ADDRESS_A = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
 const ADDRESS_B = '0xAb5801a7D398351b8bE11C439e05C5B3259aec9B'
 
 /** A controllable stand-in for MetaMask. */
-function createMockWallet(options: { accounts?: string[]; chainId?: string } = {}) {
+function createMockWallet(
+  options: { accounts?: string[]; chainId?: string; rejectAddChain?: boolean } = {},
+) {
   const handlers: Record<string, ((...args: never[]) => void)[]> = {}
   let accounts = options.accounts ?? []
   let chainId = options.chainId ?? '0x1'
+  // Like a fresh MetaMask: BNB Smart Chain is unknown until it is added.
+  const added = new Set<string>()
+  const addRequests: unknown[] = []
 
   const provider = {
     isMetaMask: true,
@@ -42,8 +47,20 @@ function createMockWallet(options: { accounts?: string[]; chainId?: string } = {
           return chainId
         case 'wallet_switchEthereumChain': {
           const requested = (params as [{ chainId: string }])[0].chainId
-          if (requested === '0x38') throw { code: 4902, message: 'Unrecognized chain ID.' }
+          if (requested === '0x38' && !added.has('0x38')) {
+            throw { code: 4902, message: 'Unrecognized chain ID.' }
+          }
           chainId = requested
+          emit('chainChanged', chainId)
+          return null
+        }
+        case 'wallet_addEthereumChain': {
+          const request = (params as [{ chainId: string }])[0]
+          addRequests.push(request)
+          if (options.rejectAddChain) throw { code: 4001, message: 'User rejected the request.' }
+          // MetaMask adds the network and then switches to it.
+          added.add(request.chainId)
+          chainId = request.chainId
           emit('chainChanged', chainId)
           return null
         }
@@ -73,6 +90,7 @@ function createMockWallet(options: { accounts?: string[]; chainId?: string } = {
       emit('accountsChanged', next)
     },
     listenerCount: (event: string) => (handlers[event] ?? []).length,
+    addRequests,
   }
 }
 
@@ -298,7 +316,7 @@ describe('WalletProvider', () => {
     await waitFor(() => expect(screen.getByTestId('chain')).toHaveTextContent('sepolia'))
   })
 
-  it('explains an unrecognised chain rather than failing silently', async () => {
+  it('adds a chain the wallet does not know, then switches to it', async () => {
     const mock = createMockWallet({ accounts: [ADDRESS_A], chainId: '0x1' })
     ;(window as never as { ethereum: unknown }).ethereum = mock.provider
 
@@ -309,9 +327,44 @@ describe('WalletProvider', () => {
       screen.getByText('to-bsc').click()
     })
 
-    await waitFor(() =>
-      expect(screen.getByTestId('error')).toHaveTextContent(/Add BNB Smart Chain to MetaMask/i),
-    )
+    await waitFor(() => expect(screen.getByTestId('chain')).toHaveTextContent('bsc'))
+    expect(screen.getByTestId('error')).toHaveTextContent('none')
+  })
+
+  it('hands MetaMask the official BNB Chain endpoint, never a third party', async () => {
+    // The user's own transactions will travel through this RPC, so it must
+    // be the chain's official endpoint with the right native currency.
+    const mock = createMockWallet({ accounts: [ADDRESS_A], chainId: '0x1' })
+    ;(window as never as { ethereum: unknown }).ethereum = mock.provider
+
+    renderWallet()
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('connected'))
+    await act(async () => {
+      screen.getByText('to-bsc').click()
+    })
+    await waitFor(() => expect(mock.addRequests).toHaveLength(1))
+
+    expect(mock.addRequests[0]).toEqual({
+      chainId: '0x38',
+      chainName: 'BNB Smart Chain',
+      nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
+      rpcUrls: ['https://bsc-dataseed.bnbchain.org'],
+      blockExplorerUrls: ['https://bscscan.com'],
+    })
+  })
+
+  it('explains it plainly when the user declines to add the chain', async () => {
+    const mock = createMockWallet({ accounts: [ADDRESS_A], chainId: '0x1', rejectAddChain: true })
+    ;(window as never as { ethereum: unknown }).ethereum = mock.provider
+
+    renderWallet()
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('connected'))
+    await act(async () => {
+      screen.getByText('to-bsc').click()
+    })
+
+    await waitFor(() => expect(screen.getByTestId('error')).toHaveTextContent(/rejected/i))
+    expect(screen.getByTestId('chain')).toHaveTextContent('ethereum')
   })
 
   it('removes its listeners on unmount', async () => {
