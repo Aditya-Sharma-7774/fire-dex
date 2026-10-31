@@ -142,6 +142,8 @@ set "AI_ONLINE=no"
 set "AI_LOCAL=no"
 
 findstr /b /c:"GROQ_API_KEY=gsk" "backend\.env" >nul 2>&1 && set "AI_ONLINE=yes"
+REM Any non-empty value: Google issues keys in more than one format.
+findstr /r /c:"^GEMINI_API_KEY=." "backend\.env" >nul 2>&1 && set "AI_ONLINE=yes"
 
 REM Ollama answers /api/tags when it is running.
 curl -s -m 3 -o nul http://localhost:11434/api/tags >nul 2>&1 && set "AI_LOCAL=yes"
@@ -167,13 +169,14 @@ if "!AI_ONLINE!"=="yes" (
 ) else (
     if "!AI_LOCAL!"=="yes" (
         echo         Local only. Analyses will work but take a few minutes each.
-        echo         Add GROQ_API_KEY to backend\.env for ~8 second analyses.
+        echo         Add GROQ_API_KEY or GEMINI_API_KEY to backend\.env for fast analyses.
     ) else (
         color 0E
         echo.
         echo   [!] NO AI PROVIDER AVAILABLE. The wallet, prices and charts will
         echo       work, but Fire AI analyses will fail. Fix either:
         echo         - add GROQ_API_KEY to backend\.env   ^(free: console.groq.com^)
+        echo         - or GEMINI_API_KEY               ^(free: aistudio.google.com^)
         echo         - or install Ollama and run: ollama pull llama3.1:8b
         echo.
     )

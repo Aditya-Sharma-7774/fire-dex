@@ -61,3 +61,12 @@ logs/
 
 # local analysis database
 backend/data/
+
+# ---------------------------------------------------------------
+# Not part of the code
+# ---------------------------------------------------------------
+.claude/
+report/
+docs/PRESENTATION.md
+docs/PHASES.md
+docs/VIVA.md
