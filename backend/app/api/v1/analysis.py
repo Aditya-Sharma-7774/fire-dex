@@ -13,7 +13,7 @@ automatic reconnection and no extra protocol.
 import asyncio
 import json
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Path, Query
 from fastapi.responses import StreamingResponse
@@ -22,11 +22,11 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.orchestrator import detect_conflicts, run_analysis
+from app.api.v1.params import Address, ChainKey, Interval, Symbol
 from app.audit.auditor import measure, record_analysis, verify_analysis
-from app.blockchain.adapters.evm import EvmAdapter
 from app.blockchain.factory import get_adapter
 from app.config import Settings, get_settings
-from app.core.errors import ChainNotSupportedError, FireDexError, NotFoundError
+from app.core.errors import FireDexError, NotFoundError
 from app.core.logging import get_logger
 from app.database.models import AgentExecution, Analysis
 from app.database.session import get_db
@@ -40,7 +40,6 @@ from app.llm.service import LlmService, get_llm_service
 from app.indicators.service import build_snapshot
 from app.market.candles import get_candle_provider
 from app.market.service import MarketDataService, get_market_service
-from app.tokens.registry import get_token
 
 log = get_logger(__name__)
 
@@ -53,14 +52,18 @@ DbDep = Annotated[AsyncSession, Depends(get_db)]
 
 
 class AnalysisRequest(BaseModel):
-    """What to analyse."""
+    """What to analyse. Every field is validated at this boundary."""
 
-    symbol: str | None = Field(default=None, description="Asset symbol, e.g. 'ETH'")
-    chain: str | None = Field(default=None, description="Chain key for portfolio analysis")
-    address: str | None = Field(default=None, description="Wallet address to include")
-    interval: str = Field(default="1h", description="Candle interval for indicators")
-    prefer: str | None = Field(default=None, description="'local' or 'online' model")
-    query: str | None = Field(default=None, description="The user's original question")
+    symbol: Symbol | None = Field(default=None, description="Asset symbol, e.g. 'ETH'")
+    chain: ChainKey | None = Field(default=None, description="Chain key for portfolio analysis")
+    address: Address | None = Field(default=None, description="Wallet address to include")
+    interval: Interval = Field(default="1h", description="Candle interval for indicators")
+    prefer: Literal["local", "online"] | None = Field(
+        default=None, description="'local' or 'online' model"
+    )
+    query: str | None = Field(
+        default=None, max_length=500, description="The user's original question"
+    )
 
 
 class AnalysisSummary(BaseModel):
@@ -161,10 +164,6 @@ async def _build_bundle(
 
     if request.chain and request.address:
         adapter = get_adapter(request.chain, settings)
-        if not isinstance(adapter, EvmAdapter):
-            raise ChainNotSupportedError(
-                f"Analysis is not implemented for {request.chain} yet."
-            )
         subject_parts.append(f"{request.chain} wallet")
         bundles.append(await collect_chain_evidence(request.chain, adapter))
         bundles.append(
@@ -232,7 +231,6 @@ async def stream_analysis(
             )
 
             outcome = await run_analysis(
-                query,
                 bundle,
                 llm,
                 on_progress=on_progress,

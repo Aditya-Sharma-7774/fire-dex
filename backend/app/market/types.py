@@ -15,7 +15,7 @@ class Price(BaseModel):
 
     Keeping them apart matters. A price fetched a second ago may describe a
     market state from a minute ago, and the freshness check needs both. The
-    evidence layer in a later phase depends on this distinction.
+    evidence layer depends on this distinction.
     """
 
     coingecko_id: str

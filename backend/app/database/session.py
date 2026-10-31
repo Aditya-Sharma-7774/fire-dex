@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.config import get_settings
 from app.core.logging import get_logger
-from app.database.models import Base
 
 log = get_logger(__name__)
 

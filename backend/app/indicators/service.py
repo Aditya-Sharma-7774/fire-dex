@@ -11,8 +11,10 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app.indicators.engine import (
+    average_true_range,
     bollinger_bands,
     exponential_moving_average,
+    find_divergences,
     macd,
     realised_volatility,
     relative_strength_index,
@@ -60,6 +62,24 @@ class IndicatorSnapshot(BaseModel):
     bollinger_position: float | None = None
 
     realised_volatility: float | None = None
+
+    atr_14: float | None = Field(
+        default=None, description="Average true range: typical distance travelled per bar"
+    )
+    atr_percent: float | None = Field(
+        default=None, description="ATR as a percentage of the last close"
+    )
+
+    divergence: Literal["bullish", "bearish"] | None = Field(
+        default=None,
+        description="Most recent price/RSI divergence, if one occurred recently",
+    )
+    divergence_bars_ago: int | None = Field(
+        default=None, description="How many bars back the divergence was confirmed"
+    )
+    divergence_detail: str | None = Field(
+        default=None, description="The two pivots compared, stated so it can be checked"
+    )
 
     support: float | None = Field(default=None, description="Lowest low in the window")
     resistance: float | None = Field(default=None, description="Highest high in the window")
@@ -114,10 +134,26 @@ def build_snapshot(symbol: str, interval: str, candles: list[Candle]) -> Indicat
 
     macd_result = macd(closes)
     bands = bollinger_bands(closes, 20)
+    rsi_series = relative_strength_index(closes, 14)
 
     upper = _last(bands.upper)
     lower = _last(bands.lower)
     last_close = closes[-1]
+
+    atr = _last(average_true_range(highs, lows, closes, 14))
+    atr_percent = (atr / last_close * 100) if atr is not None and last_close > 0 else None
+
+    # Only the most recent divergence is carried on the snapshot. Older ones
+    # are still computable from the series, but an agent given a list would
+    # have to decide which mattered, and that decision belongs in code.
+    divergences = find_divergences(closes, rsi_series)
+    latest = divergences[0] if divergences else None
+    divergence_detail = (
+        f"price {latest.price_from:,.2f} -> {latest.price_to:,.2f} while "
+        f"RSI {latest.rsi_from:.1f} -> {latest.rsi_to:.1f}"
+        if latest is not None
+        else None
+    )
 
     # Where price sits between the bands. Guard the degenerate case where
     # the bands have collapsed to zero width on a perfectly flat series.
@@ -139,7 +175,7 @@ def build_snapshot(symbol: str, interval: str, candles: list[Candle]) -> Indicat
         sma_200=_last(simple_moving_average(closes, 200)),
         ema_12=_last(exponential_moving_average(closes, 12)),
         ema_26=_last(exponential_moving_average(closes, 26)),
-        rsi_14=_last(relative_strength_index(closes, 14)),
+        rsi_14=_last(rsi_series),
         macd_line=_last(macd_result.macd),
         macd_signal=_last(macd_result.signal),
         macd_histogram=_last(macd_result.histogram),
@@ -148,6 +184,11 @@ def build_snapshot(symbol: str, interval: str, candles: list[Candle]) -> Indicat
         bollinger_lower=lower,
         bollinger_position=position,
         realised_volatility=realised_volatility(closes, 14),
+        atr_14=atr,
+        atr_percent=atr_percent,
+        divergence=latest.kind if latest is not None else None,  # type: ignore[arg-type]
+        divergence_bars_ago=latest.bars_ago if latest is not None else None,
+        divergence_detail=divergence_detail,
         support=min(lows) if lows else None,
         resistance=max(highs) if highs else None,
         volume_last=volumes[-1] if volumes else None,

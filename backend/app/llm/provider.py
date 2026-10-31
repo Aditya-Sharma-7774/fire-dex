@@ -186,10 +186,17 @@ class OllamaProvider:
         )
 
 
-class GroqProvider:
-    """Hosted models through Groq's OpenAI-compatible chat completions API."""
+class OpenAICompatibleProvider:
+    """A hosted model behind an OpenAI-compatible chat completions API.
 
-    BASE_URL = "https://api.groq.com/openai/v1"
+    Groq and Gemini both expose this protocol, so they share one tested
+    implementation and differ only in the four attributes below.
+    """
+
+    NAME = ""
+    LABEL = ""
+    BASE_URL = ""
+    MAX_CONCURRENCY = 5
 
     def __init__(self, api_key: str, model: str) -> None:
         self._api_key = api_key
@@ -197,7 +204,7 @@ class GroqProvider:
 
     @property
     def name(self) -> str:
-        return "groq"
+        return self.NAME
 
     @property
     def mode(self) -> str:
@@ -209,7 +216,7 @@ class GroqProvider:
 
     @property
     def max_concurrency(self) -> int:
-        return 5
+        return self.MAX_CONCURRENCY
 
     async def is_available(self) -> bool:
         return bool(self._api_key)
@@ -247,14 +254,14 @@ class GroqProvider:
                     f"{self._model} did not respond within {LLM_TIMEOUT_SECONDS:.0f}s.",
                 ) from exc
             except httpx.HTTPError as exc:
-                raise ProviderError("Could not reach Groq.", detail=str(exc)) from exc
+                raise ProviderError(f"Could not reach {self.LABEL}.", detail=str(exc)) from exc
 
             if response.status_code != 429:
                 break
 
             if attempt == RATE_LIMIT_RETRIES:
                 raise RateLimitError(
-                    "Groq rate limit reached and did not clear.",
+                    f"{self.LABEL} rate limit reached and did not clear.",
                     detail=(
                         "The free tier allows a limited number of tokens per minute. "
                         "Wait a moment, or switch to the local model."
@@ -265,7 +272,8 @@ class GroqProvider:
             # better than a fixed backoff would.
             wait = _retry_after_seconds(response) or (2.0 * (attempt + 1))
             log.warning(
-                "groq_rate_limited_retrying",
+                "provider_rate_limited_retrying",
+                provider=self.NAME,
                 attempt=attempt + 1,
                 waiting_seconds=round(wait, 1),
             )
@@ -274,7 +282,7 @@ class GroqProvider:
         assert response is not None
         if response.status_code >= 400:
             raise ProviderError(
-                f"Groq returned HTTP {response.status_code}.", detail=response.text[:300]
+                f"{self.LABEL} returned HTTP {response.status_code}.", detail=response.text[:300]
             )
 
         body = response.json()
@@ -288,6 +296,25 @@ class GroqProvider:
             output_tokens=usage.get("completion_tokens"),
         )
 
+
+
+class GroqProvider(OpenAICompatibleProvider):
+    NAME = "groq"
+    LABEL = "Groq"
+    BASE_URL = "https://api.groq.com/openai/v1"
+
+
+class GeminiProvider(OpenAICompatibleProvider):
+    """Google's models through Gemini's OpenAI-compatible endpoint.
+
+    Verified with a live key before relying on it: the endpoint accepts
+    bearer authentication and JSON mode. The model list is not proof a model
+    works -- gemini-2.5-flash appears in it but returns 404 for new users.
+    """
+
+    NAME = "gemini"
+    LABEL = "Gemini"
+    BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
 
 def parse_json_response(text: str) -> dict:
     """Extract a JSON object from a model response.

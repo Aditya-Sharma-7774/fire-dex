@@ -1,10 +1,9 @@
 """Fire DEX backend entry point.
 
-Milestone 1 scope: the application boots, logs in a structured way, allows
-the frontend through CORS, and answers a health check. Nothing else yet.
+Builds the application, applies the security middleware, and mounts the
+chain, market and analysis routers. Start it with START.bat, or directly:
 
-Run it with:
-    uvicorn app.main:app --reload
+    uvicorn app.main:app --host 127.0.0.1 --port 8000
 """
 
 import asyncio
@@ -13,6 +12,7 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field
 
 from app.api.v1 import chains as chains_router
@@ -61,17 +61,16 @@ class RootResponse(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown hooks.
+    """Startup and shutdown.
 
-    Database connections, provider clients and the LLM pool will be opened
-    here in later milestones. Right now it just announces itself, which is
-    genuinely useful: if you cannot see this line, the app never started.
+    Applies any pending database migrations, then primes the price cache and
+    keeps it primed, so a user request is a cache hit rather than a cold
+    network call. Both background tasks are cancelled on shutdown.
     """
     log.info(
         "fire_dex_starting",
         version=settings.app_version,
         mode=settings.app_mode.value,
-        debug=settings.debug,
     )
 
     from app.database.session import init_database
@@ -94,8 +93,51 @@ async def lifespan(app: FastAPI):
     for task in (warm_task, refresh_task):
         task.cancel()
 
+    from app.blockchain import jsonrpc
+
+    await jsonrpc.aclose()
+
     log.info("fire_dex_shutdown")
 
+
+class SecurityHeadersMiddleware:
+    """Adds standard hardening headers to every response.
+
+    Pure ASGI rather than Starlette's `@app.middleware("http")`, which wraps
+    the response body and is known to misbehave with streaming responses --
+    and agent progress is streamed to the browser over Server-Sent Events.
+    This only touches the response start, never the body.
+    """
+
+    HEADERS = {
+        b"x-content-type-options": b"nosniff",
+        b"x-frame-options": b"DENY",
+        b"referrer-policy": b"no-referrer",
+        b"cache-control": b"no-store",
+    }
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message) -> None:
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                present = {name.lower() for name, _ in headers}
+                headers += [(k, v) for k, v in self.HEADERS.items() if k not in present]
+                message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
+
+
+# Interactive API docs are a map of every endpoint, which is useful while
+# developing and an unnecessary disclosure in production.
+_docs_enabled = settings.app_mode is not AppMode.PRODUCTION
 
 app = FastAPI(
     title=settings.app_name,
@@ -105,19 +147,24 @@ app = FastAPI(
         "Decentralized Asset Intelligence Platform"
     ),
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
 )
 
-# The frontend runs on a different port during development, so the browser
-# treats it as a different origin. Without this it cannot call the API.
+# The frontend runs on a different port, so the browser treats it as a
+# different origin. Only the listed origins may call the API.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
+app.add_middleware(SecurityHeadersMiddleware)
+# Added last so it runs first: a request with a foreign Host header is
+# refused before any route or other middleware sees it.
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_host_list)
 
 # One handler turns every deliberate error into a consistent JSON shape,
 # so no route needs its own try/except for expected failures.
@@ -148,10 +195,8 @@ async def root() -> RootResponse:
 async def health() -> HealthResponse:
     """Liveness check.
 
-    The frontend polls this to show the backend status pill in the header,
-    so it must stay cheap and dependency-free. When the database and
-    external providers arrive they get their own /health/ready endpoint
-    rather than being bolted onto this one.
+    The frontend polls this to know whether the backend is reachable, so it
+    stays cheap and touches neither the database nor any provider.
     """
     return HealthResponse(
         status="ok",

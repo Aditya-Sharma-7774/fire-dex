@@ -64,3 +64,10 @@ class PortfolioSnapshot(BaseModel):
         default=False,
         description="True when at least one price came from stale cache",
     )
+    untracked_tokens: int = Field(
+        default=0,
+        description=(
+            "Other tokens this address holds that are not in the verified registry. "
+            "Solana only, where holdings can be listed; most are airdropped spam."
+        ),
+    )

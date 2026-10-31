@@ -240,6 +240,177 @@ def realised_volatility(values: list[float], period: int = 14) -> float | None:
     return (variance**0.5) * math.sqrt(365)
 
 
+def average_true_range(
+    highs: list[float], lows: list[float], closes: list[float], period: int = 14
+) -> list[float | None]:
+    """ATR: how far price typically travels in one bar.
+
+        TR  = max(high - low,
+                  |high - previous close|,
+                  |low  - previous close|)
+        ATR = Wilder-smoothed mean of TR over `period`
+
+    Wilder defined both this and the RSI, and both use the same smoothing,
+    so the recursion below is deliberately identical to the one in
+    `relative_strength_index`.
+
+    WHY THIS IS NOT JUST ANOTHER VOLATILITY NUMBER
+    ----------------------------------------------
+    Realised volatility measures dispersion of returns. ATR measures the
+    distance price actually covers, including the gaps between one bar's
+    close and the next bar's range -- which dispersion of closes cannot see.
+    That distinction is what makes it the right input for a stop distance or
+    a position size, and why it is worth having alongside the existing
+    volatility figure rather than instead of it.
+
+    The three series must be the same length. The first element has no
+    previous close, so true range there falls back to the bar's own range.
+    """
+    _validate(closes, period)
+    if not (len(highs) == len(lows) == len(closes)):
+        raise ValueError("highs, lows and closes must be the same length")
+
+    out: list[float | None] = [None] * len(closes)
+    if len(closes) <= period:
+        return out
+
+    true_ranges: list[float] = []
+    for index in range(len(closes)):
+        if index == 0:
+            true_ranges.append(highs[index] - lows[index])
+            continue
+        previous_close = closes[index - 1]
+        true_ranges.append(
+            max(
+                highs[index] - lows[index],
+                abs(highs[index] - previous_close),
+                abs(lows[index] - previous_close),
+            )
+        )
+
+    atr = sum(true_ranges[1 : period + 1]) / period
+    out[period] = atr
+
+    for index in range(period + 1, len(true_ranges)):
+        atr = (atr * (period - 1) + true_ranges[index]) / period
+        out[index] = atr
+
+    return out
+
+
+@dataclass
+class Divergence:
+    """A disagreement between price and momentum.
+
+    `bullish` means price made a lower low while the RSI made a higher low:
+    the move down is losing force. `bearish` is the mirror -- a higher high
+    in price on a lower high in RSI.
+    """
+
+    kind: str  # "bullish" or "bearish"
+    #: Indices of the two price pivots compared.
+    from_index: int
+    to_index: int
+    price_from: float
+    price_to: float
+    rsi_from: float
+    rsi_to: float
+    #: How many bars ago the later pivot was, counting back from the end.
+    bars_ago: int
+
+
+def find_pivots(values: list[float], width: int = 3) -> tuple[list[int], list[int]]:
+    """Indices of local highs and lows.
+
+    A bar is a pivot high when no bar within `width` on either side is
+    higher, and a pivot low when none is lower. Requiring confirmation on
+    BOTH sides is what keeps this honest: a pivot is only known `width` bars
+    after it happened, so the most recent `width` bars can never be pivots.
+    A one-sided test would mark the final bar as a pivot and make the
+    divergence look visible earlier than it really was.
+    """
+    if width < 1:
+        raise ValueError("width must be at least 1")
+
+    highs: list[int] = []
+    lows: list[int] = []
+
+    for index in range(width, len(values) - width):
+        window = values[index - width : index + width + 1]
+        centre = values[index]
+        if centre == max(window) and window.count(centre) == 1:
+            highs.append(index)
+        elif centre == min(window) and window.count(centre) == 1:
+            lows.append(index)
+
+    return highs, lows
+
+
+def find_divergences(
+    closes: list[float],
+    rsi: list[float | None],
+    *,
+    width: int = 3,
+    lookback: int = 60,
+    max_results: int = 4,
+) -> list[Divergence]:
+    """Price and RSI pivots that disagree, most recent first.
+
+    Only pivots within the last `lookback` bars are considered, because a
+    divergence from three hundred bars ago says nothing about now.
+    """
+    if len(closes) != len(rsi):
+        raise ValueError("closes and rsi must be the same length")
+
+    highs, lows = find_pivots(closes, width)
+    cutoff = max(0, len(closes) - lookback)
+    found: list[Divergence] = []
+
+    def rsi_at(index: int) -> float | None:
+        value = rsi[index]
+        return value
+
+    # Bearish: higher high in price, lower high in RSI.
+    recent_highs = [i for i in highs if i >= cutoff]
+    for later, earlier in _consecutive_pairs(recent_highs):
+        a, b = rsi_at(earlier), rsi_at(later)
+        if a is None or b is None:
+            continue
+        if closes[later] > closes[earlier] and b < a:
+            found.append(
+                Divergence(
+                    "bearish", earlier, later, closes[earlier], closes[later],
+                    a, b, len(closes) - 1 - later,
+                )
+            )
+
+    # Bullish: lower low in price, higher low in RSI.
+    recent_lows = [i for i in lows if i >= cutoff]
+    for later, earlier in _consecutive_pairs(recent_lows):
+        a, b = rsi_at(earlier), rsi_at(later)
+        if a is None or b is None:
+            continue
+        if closes[later] < closes[earlier] and b > a:
+            found.append(
+                Divergence(
+                    "bullish", earlier, later, closes[earlier], closes[later],
+                    a, b, len(closes) - 1 - later,
+                )
+            )
+
+    found.sort(key=lambda d: d.bars_ago)
+    return found[:max_results]
+
+
+def _consecutive_pairs(indices: list[int]) -> list[tuple[int, int]]:
+    """(later, earlier) for each adjacent pair, newest first.
+
+    Only adjacent pivots are compared. Comparing every pivot against every
+    other would find a "divergence" somewhere in almost any series.
+    """
+    return [(indices[i], indices[i - 1]) for i in range(len(indices) - 1, 0, -1)]
+
+
 def _validate(values: list[float], period: int) -> None:
     if period < 1:
         raise ValueError("period must be at least 1")

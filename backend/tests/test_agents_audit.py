@@ -5,7 +5,7 @@ The validator tests are the ones that matter most. They are what makes
 a claim.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import pytest
 

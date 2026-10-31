@@ -22,7 +22,6 @@ high score for weak work, and it cannot veto a well-evidenced analysis on a
 whim.
 """
 
-from datetime import datetime, timezone
 from enum import Enum
 
 from pydantic import BaseModel, Field

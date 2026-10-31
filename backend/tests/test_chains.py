@@ -16,7 +16,7 @@ from app.blockchain.types import ChainFamily
 from app.core.errors import ChainNotSupportedError, InvalidAddressError, RpcError
 from app.main import app
 
-client = TestClient(app)
+client = TestClient(app, base_url="http://127.0.0.1")
 
 # A well-known public address (vitalik.eth). Used only as a valid-format
 # example -- no private key is involved anywhere in these tests.
@@ -68,11 +68,24 @@ def test_unknown_chain_raises() -> None:
         get_chain("dogecoin")
 
 
-def test_only_evm_chains_are_active_so_far() -> None:
-    """We must not advertise chains we have not implemented."""
-    active = {c.id for c in list_chains() if c.is_active}
-    assert active == {"ethereum", "sepolia"}
-    assert all(get_chain(c).family is ChainFamily.EVM for c in active)
+def test_every_active_chain_has_a_working_adapter() -> None:
+    """We must not advertise a chain we cannot actually read."""
+    from app.blockchain.factory import get_adapter
+    from app.config import get_settings
+
+    active = [c for c in list_chains() if c.is_active]
+    assert {c.id for c in active} == {"ethereum", "sepolia", "bsc", "solana", "bitcoin"}
+    for chain in active:
+        adapter = get_adapter(chain.id, get_settings())
+        assert adapter.config.id == chain.id
+        for method in ("validate_address", "get_native_balance", "get_status"):
+            assert callable(getattr(adapter, method)), f"{chain.id} adapter lacks {method}"
+
+
+def test_every_chain_family_is_represented() -> None:
+    """EVM, Solana and Bitcoin are genuinely different designs; all three are live."""
+    families = {c.family for c in list_chains() if c.is_active}
+    assert families == {ChainFamily.EVM, ChainFamily.SOLANA, ChainFamily.BITCOIN}
 
 
 # ---------------------------------------------------------------------
@@ -250,13 +263,6 @@ def test_unknown_chain_returns_404_with_guidance() -> None:
     assert body["error"] == "chain_not_supported"
     assert "sepolia" in body["detail"]
 
-
-def test_unimplemented_chain_says_so_clearly() -> None:
-    """Solana is a known chain with no adapter yet -- that must be explicit."""
-    response = client.get("/api/v1/chains/solana/status")
-
-    assert response.status_code == 404
-    assert "not implemented yet" in response.json()["message"]
 
 
 def test_invalid_address_returns_400() -> None:

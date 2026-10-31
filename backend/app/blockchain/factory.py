@@ -4,12 +4,14 @@ One place that decides which adapter class serves a given chain, and
 supplies it with the right RPC endpoint from configuration.
 
 Callers ask for an adapter by chain key and get something satisfying the
-ChainAdapter protocol. When SolanaAdapter and BitcoinAdapter arrive, only
-this file changes.
+ChainAdapter protocol. A new chain family needs its adapter and one branch
+here; no caller changes.
 """
 
 from app.blockchain.adapters.base import ChainAdapter
+from app.blockchain.adapters.bitcoin import BitcoinAdapter
 from app.blockchain.adapters.evm import EvmAdapter
+from app.blockchain.adapters.solana import SolanaAdapter
 from app.blockchain.registry import get_chain
 from app.blockchain.types import ChainFamily
 from app.config import Settings
@@ -27,12 +29,16 @@ def get_adapter(chain_key: str, settings: Settings) -> ChainAdapter:
     if config.family is ChainFamily.EVM:
         return EvmAdapter(config=config, rpc_url=settings.rpc_url_for(config.id))
 
-    # Known chain, adapter not written yet. This is a deliberate,
-    # informative failure rather than a crash.
+    if config.family is ChainFamily.SOLANA:
+        return SolanaAdapter(config=config, rpc_url=settings.rpc_url_for(config.id))
+
+    if config.family is ChainFamily.BITCOIN:
+        return BitcoinAdapter(config=config, api_urls=settings.bitcoin_api_url_list)
+
     raise ChainNotSupportedError(
         f"{config.name} is not implemented yet.",
         detail=(
-            f"The {config.family.value} adapter is planned for a later milestone. "
-            "Ethereum, Sepolia and other EVM chains are available now."
+            f"There is no {config.family.value} adapter yet. "
+            "EVM chains and Solana are available now."
         ),
     )

@@ -65,10 +65,31 @@ SYMBOL_TO_BINANCE_PAIR = {
     "AAVE": "AAVEUSDT",
     "SHIB": "SHIBUSDT",
     "PEPE": "PEPEUSDT",
+    # Added with BNB Smart Chain, Solana and Bitcoin. Every pair was checked
+    # to be TRADING on Binance. Two were left out deliberately: DAIUSDT is
+    # halted, and mSOL has no pair -- they stay unchartable rather than
+    # being given another asset's chart unlabelled.
+    "BTC": "BTCUSDT",
+    "BNB": "BNBUSDT",
+    "SOL": "SOLUSDT",
+    "CAKE": "CAKEUSDT",
+    "XRP": "XRPUSDT",
+    "DOGE": "DOGEUSDT",
+    "JUP": "JUPUSDT",
+    "JTO": "JTOUSDT",
+    "PYTH": "PYTHUSDT",
+    "RAY": "RAYUSDT",
+    "BONK": "BONKUSDT",
+    "WIF": "WIFUSDT",
+    # Wrapped assets track their underlying 1:1, so they use its chart --
+    # always labelled as a proxy to the user.
+    "BTCB": "BTCUSDT",
+    "WBNB": "BNBUSDT",
+    "WSOL": "SOLUSDT",
 }
 
 # Symbols where the candle source is a proxy rather than the asset itself.
-PROXY_SYMBOLS = {"WBTC": "BTC"}
+PROXY_SYMBOLS = {"WBTC": "BTC", "BTCB": "BTC", "WBNB": "BNB", "WSOL": "SOL"}
 
 
 class CandleProvider:

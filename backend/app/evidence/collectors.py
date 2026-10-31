@@ -12,14 +12,15 @@ reduced coverage rather than hiding it.
 
 import asyncio
 
-from app.blockchain.adapters.evm import EvmAdapter
+from app.blockchain.adapters.base import ChainAdapter
+from app.blockchain.types import ChainFamily
 from app.core.logging import get_logger
 from app.evidence.types import EvidenceBuilder, EvidenceBundle, EvidenceKind
 from app.indicators.service import build_snapshot, classify_trend
 from app.market.candles import CandleProvider
 from app.market.service import MarketDataService
 from app.risk.scoring import compute_risk_score
-from app.tokens.registry import get_token, list_tokens
+from app.tokens.registry import find_asset, get_token
 
 log = get_logger(__name__)
 
@@ -35,7 +36,7 @@ async def collect_asset_evidence(
     symbol = symbol.upper()
     builder = EvidenceBuilder(subject=symbol)
 
-    token = get_token("ethereum", symbol)
+    token = find_asset(symbol)
     coingecko_id = token.coingecko_id if token else None
 
     price_task = (
@@ -120,6 +121,8 @@ async def collect_asset_evidence(
             ("Bollinger upper", _round(snapshot.bollinger_upper), "USD"),
             ("Bollinger lower", _round(snapshot.bollinger_lower), "USD"),
             ("Position within Bollinger bands", _round(snapshot.bollinger_position, 4), None),
+            ("ATR (14)", _round(snapshot.atr_14), "USD"),
+            ("ATR as percent of price", _round(snapshot.atr_percent, 3), "%"),
             ("Support (window low)", _round(snapshot.support), "USD"),
             ("Resistance (window high)", _round(snapshot.resistance), "USD"),
             ("Volume vs average", _round(snapshot.volume_ratio, 4), "x"),
@@ -143,6 +146,20 @@ async def collect_asset_evidence(
             method=method,
             data_timestamp=snapshot.last_candle_time,
         )
+
+        # Divergence is categorical, so it is added as its own record with
+        # the two pivots spelled out. An agent may interpret what it means;
+        # the detection itself is deterministic and checkable from the text.
+        if snapshot.divergence is not None:
+            builder.add(
+                EvidenceKind.INDICATOR,
+                f"RSI divergence ({snapshot.divergence})",
+                f"{snapshot.divergence_detail}, confirmed "
+                f"{snapshot.divergence_bars_ago} bars ago",
+                provider="fire-dex-indicator-engine",
+                method=f"{method} + pivot comparison",
+                data_timestamp=snapshot.last_candle_time,
+            )
 
         trend = classify_trend(snapshot)
         if trend:
@@ -184,7 +201,7 @@ async def collect_portfolio_evidence(
     chain: str,
     address: str,
     *,
-    adapter: EvmAdapter,
+    adapter: ChainAdapter,
     market: MarketDataService,
 ) -> EvidenceBundle:
     """Gather everything known about a connected wallet."""
@@ -295,7 +312,14 @@ async def collect_portfolio_evidence(
     return builder.build()
 
 
-async def collect_chain_evidence(chain: str, adapter: EvmAdapter) -> EvidenceBundle:
+BLOCK_HEIGHT_METHOD = {
+    ChainFamily.EVM: "eth_blockNumber",
+    ChainFamily.SOLANA: "getBlockHeight",
+    ChainFamily.BITCOIN: "esplora /blocks/tip/height",
+}
+
+
+async def collect_chain_evidence(chain: str, adapter: ChainAdapter) -> EvidenceBundle:
     """Network-level state."""
     builder = EvidenceBuilder(subject=f"chain:{chain}", chain=chain)
 
@@ -312,20 +336,34 @@ async def collect_chain_evidence(chain: str, adapter: EvmAdapter) -> EvidenceBun
         provider="fire-dex",
         method="chain registry",
     )
-    builder.add(
-        EvidenceKind.CHAIN_STATE,
-        "Chain ID",
-        status.chain_id,
-        provider=f"{chain}-rpc",
-        method="eth_chainId",
-    )
-    builder.add(
-        EvidenceKind.CHAIN_STATE,
-        "Current block height",
-        status.block_number,
-        provider=f"{chain}-rpc",
-        method="eth_blockNumber",
-    )
+    # Only facts that exist, each labelled with the call that produced it.
+    # Solana and Bitcoin have no chain ID, and recording "Chain ID: None"
+    # would hand an agent a non-fact as evidence.
+    family = adapter.config.family
+    if status.chain_id is not None:
+        builder.add(
+            EvidenceKind.CHAIN_STATE,
+            "Chain ID",
+            status.chain_id,
+            provider=f"{chain}-rpc",
+            method="eth_chainId",
+        )
+    if status.block_number is not None:
+        builder.add(
+            EvidenceKind.CHAIN_STATE,
+            "Current block height",
+            status.block_number,
+            provider=f"{chain}-rpc",
+            method=BLOCK_HEIGHT_METHOD[family],
+        )
+    if status.slot is not None:
+        builder.add(
+            EvidenceKind.CHAIN_STATE,
+            "Current slot",
+            status.slot,
+            provider=f"{chain}-rpc",
+            method="getSlot",
+        )
     builder.add(
         EvidenceKind.CHAIN_STATE,
         "Is a test network",

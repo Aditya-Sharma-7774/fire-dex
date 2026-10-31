@@ -12,9 +12,18 @@ from "that address is not valid for this chain".
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-from app.core.logging import get_logger
+from app.core.logging import get_logger, redact
 
 log = get_logger(__name__)
+
+
+def preview(text: str) -> str:
+    """Enough of rejected input to recognise it, never the whole value.
+
+    Rejected input is exactly where a pasted secret turns up, so an error
+    message quotes only its ends.
+    """
+    return text if len(text) <= 12 else f"{text[:6]}...{text[-4:]}"
 
 
 class FireDexError(Exception):
@@ -97,18 +106,19 @@ async def firedex_error_handler(request: Request, exc: FireDexError) -> JSONResp
     Registered once in main.py so every route gets this behaviour without
     needing its own try/except.
     """
+    # Every error reaches the client through here, so this is the one place
+    # that guarantees no error echoes a pasted key or a key-bearing URL back.
+    message = redact(exc.message)
+    detail = redact(exc.detail) if exc.detail else exc.detail
+
     log.warning(
         "request_failed",
         path=request.url.path,
         error_code=exc.error_code,
-        message=exc.message,
-        detail=exc.detail,
+        message=message,
+        detail=detail,
     )
     return JSONResponse(
         status_code=exc.status_code,
-        content={
-            "error": exc.error_code,
-            "message": exc.message,
-            "detail": exc.detail,
-        },
+        content={"error": exc.error_code, "message": message, "detail": detail},
     )

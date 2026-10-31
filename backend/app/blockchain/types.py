@@ -52,7 +52,10 @@ class ChainConfig(BaseModel):
     color: str = Field(description="Accent colour used by the UI")
     is_active: bool = Field(
         default=False,
-        description="Whether this chain is implemented yet",
+        description=(
+            "Whether Fire DEX supports this chain. Only EVM chains appear in the "
+            "MetaMask network switcher; Solana and Bitcoin are read by address."
+        ),
     )
 
 
@@ -84,4 +87,11 @@ class ChainStatus(BaseModel):
     reachable: bool
     chain_id: int | None = None
     block_number: int | None = None
+    slot: int | None = Field(
+        default=None,
+        description=(
+            "Solana only. Slots advance every ~400ms whether or not a block is "
+            "produced, so the slot is always ahead of the block height."
+        ),
+    )
     error: str | None = None

@@ -100,7 +100,6 @@ def plan_agents(bundle: EvidenceBundle) -> list[type]:
 
 
 async def run_analysis(
-    query: str,
     bundle: EvidenceBundle,
     llm: LlmProvider,
     *,

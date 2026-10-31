@@ -15,44 +15,22 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 
-import httpx
 from eth_utils import is_address, to_checksum_address
 
+from app.blockchain import jsonrpc
+from app.blockchain.jsonrpc import clear_rpc_cache  # noqa: F401 - re-exported for tests
 from app.blockchain.types import ChainConfig, ChainStatus, NativeBalance
 from app.core.errors import (
     ChainNotConfiguredError,
     InvalidAddressError,
     RateLimitError,
     RpcError,
+    preview,
 )
 from app.core.logging import get_logger
-from app.market.cache import TtlCache
 from app.tokens.types import TokenConfig
 
 log = get_logger(__name__)
-
-# A balance query should be fast. If a node takes longer than this it is
-# effectively down, and waiting only makes the user interface feel broken.
-RPC_TIMEOUT_SECONDS = 12.0
-
-# Chain reads are cached briefly.
-#
-# WHY: the dashboard polls balances, the block height and the portfolio on
-# separate timers. Without this, every poll from every open tab becomes a
-# request to a shared public node, which then rate limits us -- we measured
-# a portfolio request degrading from 8 seconds to 48 seconds and failing.
-#
-# A block is produced roughly every 12 seconds on Ethereum, so a balance
-# cannot meaningfully change faster than that. An 8-second TTL is therefore
-# invisible to the user while collapsing repeated polls into one call.
-RPC_CACHE_TTL_SECONDS = 8.0
-
-_rpc_cache: TtlCache[str] = TtlCache(default_ttl_seconds=RPC_CACHE_TTL_SECONDS)
-
-
-def clear_rpc_cache() -> None:
-    """Empty the RPC cache. Used by tests to keep them independent."""
-    _rpc_cache.clear()
 
 # First 4 bytes of keccak256("balanceOf(address)"). Part of the ERC-20
 # standard, so it is the same for every compliant token.
@@ -110,13 +88,13 @@ class EvmAdapter:
         # input loudly rather than guess what the user meant.
         if not candidate.startswith("0x"):
             raise InvalidAddressError(
-                f"'{address}' is not a valid {self._config.name} address.",
+                f"'{preview(candidate)}' is not a valid {self._config.name} address.",
                 detail="EVM addresses must start with '0x'.",
             )
 
         if not is_address(candidate):
             raise InvalidAddressError(
-                f"'{address}' is not a valid {self._config.name} address.",
+                f"'{preview(candidate)}' is not a valid {self._config.name} address.",
                 detail="EVM addresses are '0x' followed by 40 hexadecimal characters.",
             )
 
@@ -137,164 +115,29 @@ class EvmAdapter:
             )
         return self._rpc_url
 
-    def _cache_key(self, method: str, params: list) -> str:
-        return f"{self._config.id}:{method}:{params}"
-
     async def _rpc_call(self, method: str, params: list, *, use_cache: bool = True) -> str:
-        """Make one JSON-RPC 2.0 call and return the raw `result` field.
-
-        Every EVM read in this project goes through here, so caching, retry
-        policy, error mapping and logging live in exactly one place.
-        """
-        key = self._cache_key(method, params)
-        if use_cache:
-            cached = _rpc_cache.get_fresh(key)
-            if cached is not None:
-                return cached
-
-        url = self._require_rpc_url()
-        payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
-
-        try:
-            async with httpx.AsyncClient(timeout=RPC_TIMEOUT_SECONDS) as client:
-                response = await client.post(url, json=payload)
-        except httpx.TimeoutException as exc:
-            raise RpcError(
-                f"{self._config.name} node did not respond in time.",
-                detail=f"{method} timed out after {RPC_TIMEOUT_SECONDS}s",
-            ) from exc
-        except httpx.HTTPError as exc:
-            raise RpcError(
-                f"Could not reach the {self._config.name} node.",
-                detail=str(exc),
-            ) from exc
-
-        if response.status_code == 429:
-            raise RateLimitError(
-                f"The {self._config.name} RPC provider is rate limiting us.",
-                detail="Try again shortly, or configure your own RPC endpoint.",
-            )
-
-        if response.status_code >= 400:
-            raise RpcError(
-                f"{self._config.name} node returned HTTP {response.status_code}.",
-                detail=response.text[:200],
-            )
-
-        try:
-            body = response.json()
-        except ValueError as exc:
-            raise RpcError(
-                f"{self._config.name} node returned a non-JSON response.",
-                detail=response.text[:200],
-            ) from exc
-
-        # A JSON-RPC error arrives with HTTP 200 and an "error" object,
-        # so checking the status code alone is not enough.
-        if "error" in body:
-            error = body["error"]
-            raise RpcError(
-                f"{self._config.name} node rejected the request.",
-                detail=f"{error.get('code')}: {error.get('message')}",
-            )
-
-        if "result" not in body:
-            raise RpcError(
-                f"{self._config.name} node returned no result.",
-                detail=str(body)[:200],
-            )
-
-        result = body["result"]
-        if use_cache:
-            _rpc_cache.set(key, result)
-        return result
+        """One JSON-RPC call, through the transport shared with every chain."""
+        return await jsonrpc.call(
+            self._require_rpc_url(),
+            method,
+            params,
+            chain_name=self._config.name,
+            namespace=self._config.id,
+            use_cache=use_cache,
+        )
 
     async def _rpc_batch(self, calls: list[tuple[str, list]]) -> list[str | None]:
-        """Make several JSON-RPC calls in ONE HTTP request.
-
-        Reading ten token balances as ten separate requests is ten times the
-        latency and ten times the rate-limit consumption. JSON-RPC 2.0 allows
-        an array of requests in a single POST, which public nodes support.
-
-        Results come back in the same order as `calls`. An entry is None if
-        that individual call failed -- one bad token must not discard the
-        other nine.
-        """
+        """Several calls in one HTTP request. A failed entry comes back as None."""
+        # Checked before the URL, as it always was: an empty batch needs no
+        # node, so it must not fail on a chain that has none configured.
         if not calls:
             return []
-
-        # The whole batch is cached as one unit, keyed by its contents. A
-        # portfolio refresh repeats the identical batch, so this collapses
-        # repeated polls into a single request to the node.
-        batch_key = self._cache_key("batch", calls)
-        cached_batch = _rpc_cache.get_fresh(batch_key)
-        if cached_batch is not None:
-            import json as _json
-
-            return _json.loads(cached_batch)
-
-        url = self._require_rpc_url()
-        payload = [
-            {"jsonrpc": "2.0", "id": index, "method": method, "params": params}
-            for index, (method, params) in enumerate(calls)
-        ]
-
-        try:
-            async with httpx.AsyncClient(timeout=RPC_TIMEOUT_SECONDS) as client:
-                response = await client.post(url, json=payload)
-        except httpx.TimeoutException as exc:
-            raise RpcError(
-                f"{self._config.name} node did not respond in time.",
-                detail=f"batch of {len(calls)} calls timed out",
-            ) from exc
-        except httpx.HTTPError as exc:
-            raise RpcError(
-                f"Could not reach the {self._config.name} node.", detail=str(exc)
-            ) from exc
-
-        if response.status_code == 429:
-            raise RateLimitError(f"The {self._config.name} RPC provider is rate limiting us.")
-        if response.status_code >= 400:
-            raise RpcError(
-                f"{self._config.name} node returned HTTP {response.status_code}.",
-                detail=response.text[:200],
-            )
-
-        try:
-            body = response.json()
-        except ValueError as exc:
-            raise RpcError(f"{self._config.name} node returned non-JSON.") from exc
-
-        # Some nodes answer a batch with a single error object.
-        if isinstance(body, dict):
-            raise RpcError(
-                f"{self._config.name} node rejected the batch.",
-                detail=str(body.get("error", body))[:200],
-            )
-
-        # A batch response may arrive out of order, so map by id.
-        by_id: dict[int, str | None] = {}
-        for item in body:
-            if not isinstance(item, dict):
-                continue
-            item_id = item.get("id")
-            if "error" in item:
-                log.warning(
-                    "batch_call_failed",
-                    chain=self._config.id,
-                    call_id=item_id,
-                    error=str(item["error"])[:120],
-                )
-                by_id[item_id] = None
-            else:
-                by_id[item_id] = item.get("result")
-
-        results = [by_id.get(index) for index in range(len(calls))]
-
-        import json as _json
-
-        _rpc_cache.set(batch_key, _json.dumps(results))
-        return results
+        return await jsonrpc.batch(
+            self._require_rpc_url(),
+            calls,
+            chain_name=self._config.name,
+            namespace=self._config.id,
+        )
 
     # -----------------------------------------------------------------
     # Reads

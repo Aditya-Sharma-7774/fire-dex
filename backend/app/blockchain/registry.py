@@ -49,7 +49,7 @@ CHAINS: dict[str, ChainConfig] = {
         is_testnet=False,
         explorer_url="https://bscscan.com",
         color="#F0B90B",
-        is_active=False,
+        is_active=True,
     ),
     "solana": ChainConfig(
         id="solana",
@@ -60,9 +60,9 @@ CHAINS: dict[str, ChainConfig] = {
         native_symbol="SOL",
         native_decimals=9,
         is_testnet=False,
-        explorer_url="https://solscan.io",
+        explorer_url="https://explorer.solana.com",
         color="#14F195",
-        is_active=False,
+        is_active=True,
     ),
     "bitcoin": ChainConfig(
         id="bitcoin",
@@ -75,7 +75,7 @@ CHAINS: dict[str, ChainConfig] = {
         is_testnet=False,
         explorer_url="https://mempool.space",
         color="#F7931A",
-        is_active=False,
+        is_active=True,
     ),
 }
 

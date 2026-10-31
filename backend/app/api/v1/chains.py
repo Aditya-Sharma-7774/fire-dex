@@ -7,21 +7,21 @@ the browser. These routes exist to read public chain state.
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, Query
 
+from app.api.v1.params import AddressPath, ChainPath
+from app.blockchain.adapters.bitcoin import BitcoinAdapter
+from app.blockchain.adapters.solana import SolanaAdapter, SplTokenHoldings
 from app.blockchain.factory import get_adapter
 from app.blockchain.registry import get_chain, list_chains
 from app.blockchain.types import ChainConfig, ChainStatus, NativeBalance
 from app.config import Settings, get_settings
+from app.core.errors import ChainNotSupportedError
 
 router = APIRouter(prefix="/chains", tags=["chains"])
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
-ChainPath = Annotated[
-    str,
-    Path(description="Chain key, e.g. 'ethereum' or 'sepolia'", examples=["sepolia"]),
-]
 
 
 @router.get("", response_model=list[ChainConfig])
@@ -56,10 +56,7 @@ async def get_chain_status(chain: ChainPath, settings: SettingsDep) -> ChainStat
 @router.get("/{chain}/balance/{address}", response_model=NativeBalance)
 async def get_native_balance(
     chain: ChainPath,
-    address: Annotated[
-        str,
-        Path(description="Public address to query. Never a private key or seed phrase."),
-    ],
+    address: AddressPath,
     settings: SettingsDep,
 ) -> NativeBalance:
     """Native asset balance (ETH, BNB, ...) for a public address.
@@ -76,7 +73,7 @@ async def get_native_balance(
 @router.get("/{chain}/validate", response_model=dict)
 async def validate_address(
     chain: ChainPath,
-    address: Annotated[str, Query(description="Address to check")],
+    address: Annotated[str, Query(max_length=100, description="Address to check")],
     settings: SettingsDep,
 ) -> dict:
     """Check an address is valid for this chain, and return it normalised.
@@ -85,4 +82,35 @@ async def validate_address(
     clear message if it is not valid.
     """
     adapter = get_adapter(chain, settings)
-    return {"chain": chain, "address": adapter.validate_address(address), "valid": True}
+    result = {"chain": chain, "address": adapter.validate_address(address), "valid": True}
+    if isinstance(adapter, SolanaAdapter):
+        # False means a program-derived address: valid, but no private key
+        # can exist for it, so it is not anybody's personal wallet.
+        result["is_wallet"] = adapter.is_wallet_address(address)
+    if isinstance(adapter, BitcoinAdapter):
+        result["address_type"] = adapter.address_type(address)
+    return result
+
+
+@router.get("/{chain}/tokens/{address}", response_model=SplTokenHoldings)
+async def get_token_holdings(
+    chain: ChainPath,
+    address: AddressPath,
+    settings: SettingsDep,
+    limit: Annotated[int, Query(ge=1, le=500, description="Most mints to return")] = 50,
+    include_zero: Annotated[bool, Query(description="Include empty token accounts")] = False,
+) -> SplTokenHoldings:
+    """Every SPL token an address holds, summed per mint.
+
+    Solana only. A Solana node can list an owner's token accounts directly;
+    an Ethereum node cannot, because ERC-20 balances live inside each token
+    contract. EVM holdings come from /portfolio, which reads a fixed set of
+    verified token contracts instead.
+    """
+    adapter = get_adapter(chain, settings)
+    if not isinstance(adapter, SolanaAdapter):
+        raise ChainNotSupportedError(
+            f"Token enumeration is not possible on {adapter.config.name}.",
+            detail=f"Use /api/v1/portfolio/{chain}/{{address}} for EVM token balances.",
+        )
+    return await adapter.get_token_balances(address, limit=limit, include_zero=include_zero)

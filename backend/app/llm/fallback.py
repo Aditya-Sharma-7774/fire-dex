@@ -72,7 +72,11 @@ class SwitchRecord:
 
 
 class FallbackLlmProvider:
-    """Wraps two providers and fails over from one to the other."""
+    """Wraps two providers and fails over from one to the other.
+
+    Either may itself be a FallbackLlmProvider, which is how a longer chain
+    is built without a second implementation.
+    """
 
     def __init__(self, primary: LlmProvider, fallback: LlmProvider) -> None:
         self._primary = primary
@@ -80,8 +84,7 @@ class FallbackLlmProvider:
         self._active: LlmProvider = primary
         self._switched = False
 
-        #: Every switch that happened, for reporting.
-        self.switches: list[SwitchRecord] = []
+        self._switches: list[SwitchRecord] = []
 
         # A gate per provider, sized to what that provider can actually
         # serve. The active gate is used for every call.
@@ -111,6 +114,17 @@ class FallbackLlmProvider:
     @property
     def has_switched(self) -> bool:
         return self._switched
+
+    @property
+    def switches(self) -> list[SwitchRecord]:
+        """Every switch, including any inside a nested fallback.
+
+        A chain of three providers is built by nesting -- Groq, then a
+        fallback of Gemini then Ollama -- so a second failover happens in the
+        inner wrapper. Reporting only this wrapper's switches would hide it,
+        and an unreported switch makes the stored model attribution a lie.
+        """
+        return self._switches + list(getattr(self._fallback, "switches", []))
 
     async def is_available(self) -> bool:
         return await self._primary.is_available() or await self._fallback.is_available()
@@ -153,7 +167,7 @@ class FallbackLlmProvider:
             to_model=self._fallback.model,
             reason=reason,
         )
-        self.switches.append(record)
+        self._switches.append(record)
         self._switched = True
         self._active = self._fallback
 
